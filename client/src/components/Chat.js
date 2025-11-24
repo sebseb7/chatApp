@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Box, Drawer, List, ListItem, ListItemText, ListItemAvatar, Avatar,
-    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel
+    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -11,6 +11,7 @@ import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import MarkdownIcon from '@mui/icons-material/Code';
 import ReactMarkdown from 'react-markdown';
 import { useSocket } from '../context/SocketContext';
 
@@ -209,12 +210,16 @@ const Chat = ({ user }) => {
             <Drawer
                 variant="permanent"
                 sx={{
-                    width: drawerWidth,
+                    width: { xs: 280, sm: drawerWidth },
                     flexShrink: 0,
-                    [`& .MuiDrawer - paper`]: { width: drawerWidth, boxSizing: 'border-box' },
+                    [`& .MuiDrawer-paper`]: {
+                        width: { xs: 280, sm: drawerWidth },
+                        boxSizing: 'border-box',
+                        background: 'linear-gradient(180deg, #152428 0%, #0f1f23 100%)',
+                    },
                 }}
             >
-                <Box sx={{ p: 2, borderBottom: '1px solid #ddd' }}>
+                <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 217, 255, 0.2)', background: 'rgba(15, 76, 92, 0.3)' }}>
                     <Typography variant="h6">Users</Typography>
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                         <Typography variant="caption">{currentUser.name} ({currentUser.isInvisible ? 'Invisible' : 'Visible'})</Typography>
@@ -389,9 +394,16 @@ const Chat = ({ user }) => {
                                         mb: 1
                                     }}>
                                         <Paper sx={{
-                                            p: 1,
-                                            bgcolor: msg.senderId === user.id ? '#e3f2fd' : '#f5f5f5',
-                                            maxWidth: '70%'
+                                            p: 1.5,
+                                            background: msg.senderId === user.id
+                                                ? 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)'
+                                                : 'linear-gradient(135deg, #1a2f35 0%, #254552 100%)',
+                                            maxWidth: '70%',
+                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                                            transition: 'transform 0.2s ease',
+                                            '&:hover': {
+                                                transform: 'translateY(-1px)',
+                                            }
                                         }}>
                                             <ReactMarkdown>{msg.content}</ReactMarkdown>
                                             <Typography variant="caption" display="block" align="right">
@@ -403,11 +415,32 @@ const Chat = ({ user }) => {
                             })}
                             <div ref={messagesEndRef} />
                         </Paper>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                            <Tooltip
+                                title={
+                                    <Box sx={{ p: 1 }}>
+                                        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Markdown Syntax Supported:</Typography>
+                                        <Typography variant="caption" component="div">**bold** - <strong>bold text</strong></Typography>
+                                        <Typography variant="caption" component="div">*italic* - <em>italic text</em></Typography>
+                                        <Typography variant="caption" component="div">`code` - inline code</Typography>
+                                        <Typography variant="caption" component="div">```code block``` - code block</Typography>
+                                        <Typography variant="caption" component="div">[link](url) - hyperlink</Typography>
+                                        <Typography variant="caption" component="div">![alt](url) - image</Typography>
+                                        <Typography variant="caption" component="div"># Heading - headings</Typography>
+                                        <Typography variant="caption" component="div">- item - bullet list</Typography>
+                                    </Box>
+                                }
+                                placement="top"
+                                arrow
+                            >
+                                <IconButton size="small" sx={{ mb: 0.5, color: 'text.secondary' }}>
+                                    <MarkdownIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
                             <TextField
                                 fullWidth
                                 variant="outlined"
-                                placeholder="Type a message (Markdown supported, Paste images)"
+                                placeholder="Type a message..."
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onPaste={handlePaste}
@@ -420,7 +453,7 @@ const Chat = ({ user }) => {
                                 multiline
                                 maxRows={4}
                             />
-                            <IconButton color="primary" onClick={handleSend}>
+                            <IconButton color="primary" onClick={handleSend} sx={{ mb: 0.5 }}>
                                 <SendIcon />
                             </IconButton>
                         </Box>
@@ -434,7 +467,7 @@ const Chat = ({ user }) => {
 
             {/* Simple Dialogs for Group Creation and Adding Members */}
             {showGroupDialog && (
-                <Paper sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', p: 4, zIndex: 1000 }}>
+                <Paper className="glass" sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', p: 4, zIndex: 1000, background: 'rgba(26, 53, 64, 0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(0, 217, 255, 0.2)' }}>
                     <Typography variant="h6">Create Group</Typography>
                     <TextField label="Group Name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} fullWidth sx={{ my: 2 }} />
                     {user.isAdmin === 1 && (
@@ -451,7 +484,7 @@ const Chat = ({ user }) => {
             )}
 
             {showAddMemberDialog && (
-                <Paper sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', p: 4, zIndex: 1000, maxHeight: '400px', overflow: 'auto' }}>
+                <Paper className="glass" sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', p: 4, zIndex: 1000, maxHeight: '400px', overflow: 'auto', background: 'rgba(26, 53, 64, 0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(0, 217, 255, 0.2)' }}>
                     <Typography variant="h6">Add Member to {selectedUser.name}</Typography>
                     <List>
                         {users
