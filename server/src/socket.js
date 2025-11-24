@@ -5,6 +5,15 @@ module.exports = function (io, db) {
     io.on('connection', async (socket) => {
         console.log('New socket connection:', socket.id);
 
+        // Ping the client to keep the connection alive and verify "online" state
+        const pingInterval = setInterval(() => {
+            socket.emit('ping');
+        }, 30000); // 30 seconds
+
+        socket.on('disconnect', () => {
+            clearInterval(pingInterval);
+        });
+
         // We expect the client to send the user ID upon connection or via a 'join' event
         // For simplicity, let's assume the client emits 'join' with their user ID immediately after connection
         // In a real app with shared session, we could parse the cookie from the handshake

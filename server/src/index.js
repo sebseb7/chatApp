@@ -10,6 +10,7 @@ const configureAuth = require('./auth');
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // trust first proxy
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -64,9 +65,11 @@ initDB().then(db => {
         res.send(req.user);
     });
 
-    app.get('/api/logout', (req, res) => {
-        req.logout();
-        res.redirect('/');
+    app.get('/api/logout', (req, res, next) => {
+        req.logout((err) => {
+            if (err) { return next(err); }
+            res.redirect('/');
+        });
     });
 
     const configureSocket = require('./socket');

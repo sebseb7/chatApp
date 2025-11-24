@@ -18,7 +18,8 @@ module.exports = {
                 ws: true
             },
             '/auth': 'http://localhost:3001'
-        }
+        },
+        allowedHosts: 'all'
     },
     module: {
         rules: [

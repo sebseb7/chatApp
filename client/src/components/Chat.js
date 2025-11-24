@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Box, Drawer, List, ListItem, ListItemText, ListItemAvatar, Avatar,
-    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip
+    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip, Snackbar, Alert
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -18,7 +18,7 @@ import { useSocket } from '../context/SocketContext';
 const drawerWidth = 300;
 
 const Chat = ({ user }) => {
-    const socket = useSocket();
+    const { socket, isConnected } = useSocket();
     const [users, setUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
     const [messages, setMessages] = useState([]);
@@ -109,6 +109,10 @@ const Chat = ({ user }) => {
             setGroupMembers([]);
         }
     }, [selectedUser, socket]);
+
+    const handleLogout = () => {
+        window.location.href = '/api/logout';
+    };
 
     const handleSend = () => {
         if (input.trim() && selectedUser) {
@@ -223,16 +227,25 @@ const Chat = ({ user }) => {
                     <Typography variant="h6">Users</Typography>
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                         <Typography variant="caption">{currentUser.name} ({currentUser.isInvisible ? 'Invisible' : 'Visible'})</Typography>
-                        <IconButton
-                            size="small"
-                            onClick={() => {
-                                const newStatus = currentUser.isInvisible ? 'visible' : 'invisible';
-                                socket.emit('set_status', { status: newStatus });
-                            }}
-                            title="Toggle Invisible"
-                        >
-                            {currentUser.isInvisible ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                        </IconButton>
+                        <Box>
+                            <IconButton
+                                size="small"
+                                onClick={() => {
+                                    const newStatus = currentUser.isInvisible ? 'visible' : 'invisible';
+                                    socket.emit('set_status', { status: newStatus });
+                                }}
+                                title="Toggle Invisible"
+                            >
+                                {currentUser.isInvisible ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                            </IconButton>
+                            <IconButton
+                                size="small"
+                                onClick={handleLogout}
+                                title="Logout"
+                            >
+                                <ExitToAppIcon />
+                            </IconButton>
+                        </Box>
                     </Box>
                     <Button size="small" onClick={() => setShowGroupDialog(true)}>Create Group</Button>
                 </Box>
@@ -498,7 +511,16 @@ const Chat = ({ user }) => {
                     <Button onClick={() => setShowAddMemberDialog(false)}>Cancel</Button>
                 </Paper>
             )}
-        </Box>
+
+            <Snackbar
+                open={!isConnected}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+            >
+                <Alert severity="error" variant="filled" sx={{ width: '100%' }}>
+                    Disconnected from server. Trying to reconnect...
+                </Alert>
+            </Snackbar>
+        </Box >
     );
 };
 
