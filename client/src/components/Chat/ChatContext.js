@@ -717,7 +717,9 @@ export class ChatProvider extends Component {
                 passphrase: '',
                 hasStoredKeys: false,
                 myPublicKeyJwk: null,
-                showPassphraseDialog: true
+                // Clear all decrypted message cache - they'll show as encrypted again
+                decryptedMessages: {},
+                decryptionFailed: {}
             });
             sessionStorage.removeItem("chat_e2ee_passphrase");
             // Clear server-side stored public key

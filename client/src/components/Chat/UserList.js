@@ -12,6 +12,7 @@ import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LockIcon from '@mui/icons-material/Lock';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import VpnKeyOffIcon from '@mui/icons-material/VpnKeyOff';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { ChatContext } from './ChatContext';
 
@@ -41,7 +42,8 @@ class UserList extends Component {
             setViewingKeyUser,
             setShowKeyFingerprintDialog,
             toggleLocalMute,
-            deleteGroup
+            deleteGroup,
+            handleClearKeys
         } = this.context;
         
         const currentUser = users.find(u => u.id === user.id) || user;
@@ -88,6 +90,13 @@ class UserList extends Component {
                                     <VpnKeyIcon color={keyPair ? "primary" : "disabled"} />
                                 </IconButton>
                             </Tooltip>
+                            {keyPair && (
+                                <Tooltip title="Reset encryption keys">
+                                    <IconButton size="small" onClick={(e) => { e.currentTarget.blur(); handleClearKeys(); }} color="warning">
+                                        <VpnKeyOffIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
                             <Tooltip title={currentUser.isInvisible
                                 ? "You are currently invisible. You appear offline, and only users in shared private groups can start chats with you."
                                 : "You are currently visible. Anyone can see you and start a chat."}>

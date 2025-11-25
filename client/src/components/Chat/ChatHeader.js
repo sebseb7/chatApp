@@ -5,6 +5,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import LockIcon from '@mui/icons-material/Lock';
+import VpnKeyOffIcon from '@mui/icons-material/VpnKeyOff';
 import { ChatContext } from './ChatContext';
 
 class ChatHeader extends Component {
@@ -24,6 +25,7 @@ class ChatHeader extends Component {
             toggleUserMute,
             removeFromGroup,
             deleteAllMessages,
+            handleClearKeys,
             isMobile,
             setSelectedUser
         } = this.context;
@@ -90,22 +92,35 @@ class ChatHeader extends Component {
                 </Box>
                 <Box display="flex" alignItems="center" gap={1}>
                     {!selectedUser.isGroup && (
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={isE2EEEnabled}
-                                    onChange={(e) => setIsE2EEEnabled(e.target.checked)}
-                                    color="primary"
-                                    disabled={!keyPair || !peerPublicKeys[selectedUser.id]}
-                                />
-                            }
-                            label={
-                                <Box display="flex" alignItems="center">
-                                    <Typography variant="body2" sx={{ mr: 0.5 }}>EEE</Typography>
-                                    <LockIcon fontSize="small" />
-                                </Box>
-                            }
-                        />
+                        <>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={isE2EEEnabled}
+                                        onChange={(e) => setIsE2EEEnabled(e.target.checked)}
+                                        color="primary"
+                                        disabled={!keyPair || !peerPublicKeys[selectedUser.id]}
+                                    />
+                                }
+                                label={
+                                    <Box display="flex" alignItems="center">
+                                        <Typography variant="body2" sx={{ mr: 0.5 }}>EEE</Typography>
+                                        <LockIcon fontSize="small" />
+                                    </Box>
+                                }
+                            />
+                            {keyPair && (
+                                <Tooltip title="Reset encryption keys (clears decrypted messages from view)">
+                                    <IconButton 
+                                        onClick={handleClearKeys} 
+                                        size="small"
+                                        color="warning"
+                                    >
+                                        <VpnKeyOffIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </>
                     )}
                     <Tooltip title={selectedUser.isGroup ? "Delete all YOUR messages in this group" : "Delete all messages in this chat"}>
                         <Button
