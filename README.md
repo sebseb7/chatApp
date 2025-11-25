@@ -122,9 +122,9 @@ Verify the integrity of deployed files by comparing SHA-256 hashes:
 <!-- BUILD_HASHES_START -->
 | File | SRI Hash (compare with [srihash.org](https://srihash.org)) |
 |------|-------------------------------------------------------------|
-| `index.html` | `sha256-not-yet-built` |
-| `bundle.js` | `sha256-not-yet-built` |
-| `sw.js` | `sha256-not-yet-built` |
+| `index.html` | `sha256-yM5sxGXutkPernTY5emBf2rCHZPCl9ZNAFtZLN602EE=` |
+| `bundle.js` | `sha256-VRBO6Qh7D+v+e3Ldrhgi5ReACH4zLb4bX0nljllWm8A=` |
+| `sw.js` | `sha256-A4EjsQpU1fR3RBC3mnpKzq1gjuB46Wa9yAK8KoHXzxE=` |
 <!-- BUILD_HASHES_END -->
 
 **Verify online:** [index.html](https://www.srihash.org/?url=https://c.growheads.de/index.html) | [bundle.js](https://www.srihash.org/?url=https://c.growheads.de/bundle.js) | [sw.js](https://www.srihash.org/?url=https://c.growheads.de/sw.js)
