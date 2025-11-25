@@ -140,10 +140,15 @@ const Chat = ({ user }) => {
 
         socket.on('receive_message', async (message) => {
             setMessages((prev) => {
-                // Deduplicate: If we have an optimistic message with same ID (unlikely as we used Date.now())
-                // or if we want to replace the optimistic one.
-                // Ideally, server returns the tempId we sent, but we didn't send one.
-                // For now, just append.
+                // Deduplicate using tempId
+                if (message.tempId) {
+                    const existingIndex = prev.findIndex(m => m.tempId === message.tempId);
+                    if (existingIndex !== -1) {
+                        const newMessages = [...prev];
+                        newMessages[existingIndex] = message;
+                        return newMessages;
+                    }
+                }
                 return [...prev, message];
             });
 
@@ -328,11 +333,14 @@ const Chat = ({ user }) => {
 
     const handleSend = async () => {
         if (input.trim() && selectedUser) {
+            const tempId = Date.now(); // Use as tempId
+
             if (selectedUser.isGroup) {
                 socket.emit('send_message', {
                     groupId: selectedUser.id,
                     content: input,
-                    type: 'text'
+                    type: 'text',
+                    tempId
                 });
             } else {
                 let content = input;
@@ -366,9 +374,9 @@ const Chat = ({ user }) => {
 
                 // Optimistic update for E2EE (since server won't echo plain text)
                 if (type === 'eee') {
-                    const tempId = Date.now(); // Temporary ID
                     const optimisticMsg = {
-                        id: tempId,
+                        id: tempId, // Use tempId as ID initially
+                        tempId,
                         senderId: user.id,
                         senderName: user.name,
                         senderAvatar: user.avatar,
@@ -386,7 +394,8 @@ const Chat = ({ user }) => {
                     receiverId: selectedUser.id,
                     content,
                     type,
-                    senderPublicKey // Send my key along
+                    senderPublicKey, // Send my key along
+                    tempId
                 });
             }
             setInput('');
