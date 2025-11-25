@@ -1,7 +1,8 @@
 const { sendPushToUser } = require('./push');
 
 module.exports = function (io, db) {
-    // Map to track online users: userId -> { socketId, publicKey }
+    // Map to track online users: userId -> { socketIds: Set, publicKey }
+    // Using Set of socketIds to support multiple connections per user
     const onlineUsers = new Map();
 
     io.on('connection', async (socket) => {
@@ -21,8 +22,17 @@ module.exports = function (io, db) {
                 const user = await db.get('SELECT * FROM users WHERE id = ?', userId);
                 if (user) {
                     socket.userId = userId;
-                    // Initialize with no public key, wait for update_public_key
-                    onlineUsers.set(userId, { socketId: socket.id, publicKey: null });
+                    
+                    // Join a room named after the userId so all connections receive messages
+                    socket.join(`user:${userId}`);
+                    
+                    // Track this socket for the user (support multiple connections)
+                    const existingData = onlineUsers.get(userId);
+                    if (existingData) {
+                        existingData.socketIds.add(socket.id);
+                    } else {
+                        onlineUsers.set(userId, { socketIds: new Set([socket.id]), publicKey: null });
+                    }
 
                     // Broadcast updated user list
                     await broadcastUserList();
@@ -47,10 +57,9 @@ module.exports = function (io, db) {
                         // Mark as delivered in DB
                         await db.run('UPDATE messages SET delivered = 1 WHERE id = ?', msg.id);
                         
-                        // Notify sender if online
-                        const senderData = onlineUsers.get(msg.senderId);
-                        if (senderData) {
-                            io.to(senderData.socketId).emit('delivery_update', { messageId: msg.id, oderId: msg.receiverId });
+                        // Notify sender if online (use room to reach all their connections)
+                        if (onlineUsers.has(msg.senderId)) {
+                            io.to(`user:${msg.senderId}`).emit('delivery_update', { messageId: msg.id, oderId: msg.receiverId });
                         }
                     }
 
@@ -186,17 +195,16 @@ module.exports = function (io, db) {
                     const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
                     if (group && group.isPublic) {
-                        // Broadcast to ALL online users
-                        for (const [userId, userData] of onlineUsers) {
-                            io.to(userData.socketId).emit('receive_message', message);
+                        // Broadcast to ALL online users (use rooms)
+                        for (const [oderId] of onlineUsers) {
+                            io.to(`user:${oderId}`).emit('receive_message', message);
                         }
                     } else {
-                        // Broadcast to all group members
+                        // Broadcast to all group members (use rooms)
                         const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                         for (const member of members) {
-                            const userData = onlineUsers.get(member.userId);
-                            if (userData) {
-                                io.to(userData.socketId).emit('receive_message', message);
+                            if (onlineUsers.has(member.userId)) {
+                                io.to(`user:${member.userId}`).emit('receive_message', message);
                             }
                         }
                     }
@@ -236,13 +244,13 @@ module.exports = function (io, db) {
                     };
 
                     if (receiverData) {
-                        // Receiver is ONLINE
-                        io.to(receiverData.socketId).emit('receive_message', message);
-                        socket.emit('delivery_update', { messageId: message.id, oderId: receiverId });
-                        socket.emit('receive_message', { ...message, delivered: true });
+                        // Receiver is ONLINE (use room to reach all their connections)
+                        io.to(`user:${receiverId}`).emit('receive_message', message);
+                        io.to(`user:${socket.userId}`).emit('delivery_update', { messageId: message.id, oderId: receiverId });
+                        io.to(`user:${socket.userId}`).emit('receive_message', { ...message, delivered: true });
                     } else {
-                        // Receiver is OFFLINE
-                        socket.emit('receive_message', { ...message, delivered: false });
+                        // Receiver is OFFLINE (use room to reach all sender's connections)
+                        io.to(`user:${socket.userId}`).emit('receive_message', { ...message, delivered: false });
                         
                         // Send push notification to offline user
                         const messagePreview = type === 'eee' 
@@ -389,24 +397,22 @@ module.exports = function (io, db) {
                 if (message.groupId) {
                     const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', message.groupId);
                     if (group && group.isPublic) {
-                        for (const [userId, userData] of onlineUsers) {
-                            io.to(userData.socketId).emit('message_deleted', { messageId, groupId: message.groupId });
+                        for (const [oderId] of onlineUsers) {
+                            io.to(`user:${oderId}`).emit('message_deleted', { messageId, groupId: message.groupId });
                         }
                     } else {
                         const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', message.groupId);
                         for (const member of members) {
-                            const userData = onlineUsers.get(member.userId);
-                            if (userData) {
-                                io.to(userData.socketId).emit('message_deleted', { messageId, groupId: message.groupId });
+                            if (onlineUsers.has(member.userId)) {
+                                io.to(`user:${member.userId}`).emit('message_deleted', { messageId, groupId: message.groupId });
                             }
                         }
                     }
                 } else {
-                    // P2P: notify both sender and receiver
-                    const senderData = onlineUsers.get(message.senderId);
-                    const receiverData = onlineUsers.get(message.receiverId);
-                    if (senderData) io.to(senderData.socketId).emit('message_deleted', { messageId, oderId: message.senderId === socket.userId ? message.receiverId : message.senderId });
-                    if (receiverData) io.to(receiverData.socketId).emit('message_deleted', { messageId, oderId: message.senderId === socket.userId ? message.receiverId : message.senderId });
+                    // P2P: notify both sender and receiver (use rooms)
+                    const otherUserId = message.senderId === socket.userId ? message.receiverId : message.senderId;
+                    if (onlineUsers.has(message.senderId)) io.to(`user:${message.senderId}`).emit('message_deleted', { messageId, oderId: otherUserId });
+                    if (onlineUsers.has(message.receiverId)) io.to(`user:${message.receiverId}`).emit('message_deleted', { messageId, oderId: otherUserId });
                 }
             } catch (err) {
                 console.error('Error deleting message:', err);
@@ -421,18 +427,17 @@ module.exports = function (io, db) {
                     // Group: can only delete own messages
                     await db.run('DELETE FROM messages WHERE groupId = ? AND senderId = ?', groupId, socket.userId);
                     
-                    // Notify group members
+                    // Notify group members (use rooms)
                     const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
                     if (group && group.isPublic) {
-                        for (const [userId, userData] of onlineUsers) {
-                            io.to(userData.socketId).emit('messages_deleted_bulk', { groupId, oderId: socket.userId });
+                        for (const [oderId] of onlineUsers) {
+                            io.to(`user:${oderId}`).emit('messages_deleted_bulk', { groupId, oderId: socket.userId });
                         }
                     } else {
                         const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                         for (const member of members) {
-                            const userData = onlineUsers.get(member.userId);
-                            if (userData) {
-                                io.to(userData.socketId).emit('messages_deleted_bulk', { groupId, oderId: socket.userId });
+                            if (onlineUsers.has(member.userId)) {
+                                io.to(`user:${member.userId}`).emit('messages_deleted_bulk', { groupId, oderId: socket.userId });
                             }
                         }
                     }
@@ -446,11 +451,9 @@ module.exports = function (io, db) {
                         )
                     `, socket.userId, oderId, oderId, socket.userId);
                     
-                    // Notify both users
-                    const myData = onlineUsers.get(socket.userId);
-                    const otherData = onlineUsers.get(oderId);
-                    if (myData) io.to(myData.socketId).emit('messages_deleted_bulk', { oderId });
-                    if (otherData) io.to(otherData.socketId).emit('messages_deleted_bulk', { oderId: socket.userId });
+                    // Notify both users (use rooms)
+                    if (onlineUsers.has(socket.userId)) io.to(`user:${socket.userId}`).emit('messages_deleted_bulk', { oderId });
+                    if (onlineUsers.has(oderId)) io.to(`user:${oderId}`).emit('messages_deleted_bulk', { oderId: socket.userId });
                 }
             } catch (err) {
                 console.error('Error deleting all messages:', err);
@@ -459,9 +462,18 @@ module.exports = function (io, db) {
 
         socket.on('disconnect', async () => {
             if (socket.userId) {
-                onlineUsers.delete(socket.userId);
-                await broadcastUserList();
-                console.log(`User ${socket.userId} disconnected.`);
+                const userData = onlineUsers.get(socket.userId);
+                if (userData) {
+                    userData.socketIds.delete(socket.id);
+                    // Only remove user from onlineUsers if all their connections are gone
+                    if (userData.socketIds.size === 0) {
+                        onlineUsers.delete(socket.userId);
+                        await broadcastUserList();
+                        console.log(`User ${socket.userId} disconnected (all connections closed).`);
+                    } else {
+                        console.log(`User ${socket.userId} closed one connection (${userData.socketIds.size} remaining).`);
+                    }
+                }
             }
         });
 
@@ -667,15 +679,14 @@ module.exports = function (io, db) {
             const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
             if (group && group.isPublic) {
-                for (const [userId, userData] of onlineUsers) {
-                    io.to(userData.socketId).emit('receive_message', message);
+                for (const [oderId] of onlineUsers) {
+                    io.to(`user:${oderId}`).emit('receive_message', message);
                 }
             } else {
                 const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                 for (const member of members) {
-                    const userData = onlineUsers.get(member.userId);
-                    if (userData) {
-                        io.to(userData.socketId).emit('receive_message', message);
+                    if (onlineUsers.has(member.userId)) {
+                        io.to(`user:${member.userId}`).emit('receive_message', message);
                     }
                 }
             }
@@ -695,20 +706,19 @@ module.exports = function (io, db) {
              `, groupId);
 
             if (group && group.isPublic) {
-                for (const [userId, userData] of onlineUsers) {
-                    const user = await db.get('SELECT isAdmin FROM users WHERE id = ?', userId);
+                for (const [oderId] of onlineUsers) {
+                    const user = await db.get('SELECT isAdmin FROM users WHERE id = ?', oderId);
                     if (user && user.isAdmin) {
-                        io.to(userData.socketId).emit('group_members', { groupId, members });
+                        io.to(`user:${oderId}`).emit('group_members', { groupId, members });
                     } else {
-                        io.to(userData.socketId).emit('group_members', { groupId, members: [] });
+                        io.to(`user:${oderId}`).emit('group_members', { groupId, members: [] });
                     }
                 }
             } else {
                 const memberIds = members.map(m => m.id);
                 for (const memberId of memberIds) {
-                    const userData = onlineUsers.get(memberId);
-                    if (userData) {
-                        io.to(userData.socketId).emit('group_members', { groupId, members });
+                    if (onlineUsers.has(memberId)) {
+                        io.to(`user:${memberId}`).emit('group_members', { groupId, members });
                     }
                 }
             }
@@ -785,24 +795,20 @@ module.exports = function (io, db) {
                     if (groupId) {
                         const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
                         if (group && group.isPublic) {
-                            for (const [uid, userData] of onlineUsers) {
-                                io.to(userData.socketId).emit('message_read_update', readUpdate);
+                            for (const [uid] of onlineUsers) {
+                                io.to(`user:${uid}`).emit('message_read_update', readUpdate);
                             }
                         } else {
                             const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                             for (const member of members) {
-                                const userData = onlineUsers.get(member.userId);
-                                if (userData) io.to(userData.socketId).emit('message_read_update', readUpdate);
+                                if (onlineUsers.has(member.userId)) io.to(`user:${member.userId}`).emit('message_read_update', readUpdate);
                             }
                         }
                     } else {
-                        socket.emit('message_read_update', readUpdate);
+                        io.to(`user:${socket.userId}`).emit('message_read_update', readUpdate);
 
-                        if (senderId) {
-                            const senderData = onlineUsers.get(senderId);
-                            if (senderData) {
-                                io.to(senderData.socketId).emit('message_read_update', readUpdate);
-                            }
+                        if (senderId && onlineUsers.has(senderId)) {
+                            io.to(`user:${senderId}`).emit('message_read_update', readUpdate);
                         }
                     }
                 }
@@ -813,8 +819,7 @@ module.exports = function (io, db) {
         });
 
         async function broadcastGroupList(targetUserId) {
-            const userData = onlineUsers.get(targetUserId);
-            if (!userData) return;
+            if (!onlineUsers.has(targetUserId)) return;
 
             const groups = await db.all(`
             SELECT DISTINCT g.id, g.name, g.isPublic
@@ -823,7 +828,7 @@ module.exports = function (io, db) {
             WHERE g.isPublic = 1 OR gm.userId = ?
         `, targetUserId);
 
-            io.to(userData.socketId).emit('group_list', groups);
+            io.to(`user:${targetUserId}`).emit('group_list', groups);
         }
 
         async function broadcastUserList() {
@@ -831,9 +836,9 @@ module.exports = function (io, db) {
                 const users = await db.all('SELECT id, name, avatar, customName, customAvatar, isInvisible, isAdmin, publicKey FROM users');
                 const adminIds = new Set(users.filter(u => u.isAdmin).map(u => u.id));
 
-                for (const [userId, userData] of onlineUsers) {
+                for (const [oderId] of onlineUsers) {
                     const visibleUsers = [];
-                    const isViewerAdmin = adminIds.has(userId);
+                    const isViewerAdmin = adminIds.has(oderId);
 
                     let sharedPrivateGroupUserIds = new Set();
                     let dmHistoryUserIds = new Set();
@@ -845,7 +850,7 @@ module.exports = function (io, db) {
                             FROM group_members gm
                             JOIN groups g ON gm.groupId = g.id
                             WHERE gm.userId = ? AND g.isPublic = 0
-                        `, userId);
+                        `, oderId);
 
                         const myPrivateGroupIds = myPrivateGroups.map(g => g.groupId);
 
@@ -864,14 +869,14 @@ module.exports = function (io, db) {
                                 CASE WHEN senderId = ? THEN receiverId ELSE senderId END as oderId
                             FROM messages 
                             WHERE groupId = 0 AND (senderId = ? OR receiverId = ?)
-                        `, userId, userId, userId);
+                        `, oderId, oderId, oderId);
                         dmPartners.forEach(p => dmHistoryUserIds.add(p.oderId));
                     }
 
                     for (const otherUser of users) {
                         // Attach public key if available (prefer live key from online user, fall back to stored key)
-                        const otherUserData = onlineUsers.get(otherUser.id);
-                        let publicKey = otherUserData ? otherUserData.publicKey : null;
+                        const otherUserOnlineData = onlineUsers.get(otherUser.id);
+                        let publicKey = otherUserOnlineData ? otherUserOnlineData.publicKey : null;
                         // For offline users, use the stored publicKey from DB
                         if (!publicKey && otherUser.publicKey) {
                             try {
@@ -896,12 +901,12 @@ module.exports = function (io, db) {
                             publicKey
                         };
 
-                        if (otherUser.id === userId) {
+                        if (otherUser.id === oderId) {
                             visibleUsers.push({ ...userWithKey, status: 'online' });
                             continue;
                         }
 
-                        const isOtherOnline = !!otherUserData;
+                        const isOtherOnline = !!otherUserOnlineData;
                         let status = isOtherOnline ? 'online' : 'offline';
 
                         if (otherUser.isInvisible) {
@@ -919,7 +924,7 @@ module.exports = function (io, db) {
                         }
                     }
 
-                    io.to(userData.socketId).emit('user_list', visibleUsers);
+                    io.to(`user:${oderId}`).emit('user_list', visibleUsers);
                 }
 
             } catch (err) {
