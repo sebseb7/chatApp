@@ -31,7 +31,7 @@ const upload = multer({
     storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const allowedTypes = /jpeg|jpg|png|gif|webp|avif/;
         const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
         const mime = allowedTypes.test(file.mimetype);
         if (ext && mime) {
@@ -91,6 +91,22 @@ initDB().then(db => {
 
     configureAuth(passport, db);
 
+    // Helper to transform user with effective name/avatar
+    function transformUser(user) {
+        if (!user) return null;
+        return {
+            ...user,
+            // Effective values (custom if set, else Google)
+            name: user.customName || user.name,
+            avatar: user.customAvatar || user.avatar,
+            // Preserve Google values for reset functionality
+            googleName: user.name,
+            googleAvatar: user.avatar,
+            // Flag to show if custom profile is set
+            hasCustomProfile: !!(user.customName || user.customAvatar)
+        };
+    }
+
     app.get('/auth/google',
         passport.authenticate('google', { scope: ['profile', 'email'] })
     );
@@ -103,7 +119,7 @@ initDB().then(db => {
     );
 
     app.get('/api/current_user', (req, res) => {
-        res.send(req.user);
+        res.send(transformUser(req.user));
     });
 
     app.get('/api/logout', (req, res, next) => {
@@ -174,7 +190,7 @@ initDB().then(db => {
             // Notify connected clients about profile update
             io.emit('profile_updated', { userId });
 
-            res.json(updatedUser);
+            res.json(transformUser(updatedUser));
         } catch (err) {
             console.error('Error updating profile:', err);
             res.status(500).json({ error: 'Failed to update profile' });

@@ -10,9 +10,18 @@ const str2ab = (str) => {
     return buf;
 };
 
-// Convert ArrayBuffer to string
+// Convert ArrayBuffer to string (chunked to avoid stack overflow with large buffers)
 const ab2str = (buf) => {
-    return String.fromCharCode.apply(null, new Uint8Array(buf));
+    const uint8Array = new Uint8Array(buf);
+    const chunkSize = 8192; // Process in chunks to avoid call stack overflow
+    let result = '';
+    
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+        result += String.fromCharCode.apply(null, chunk);
+    }
+    
+    return result;
 };
 
 // Convert ArrayBuffer to Base64

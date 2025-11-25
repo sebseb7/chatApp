@@ -20,6 +20,7 @@ import ReactMarkdown from 'react-markdown';
 import { useSocket } from '../context/SocketContext';
 import { generateAndStoreKeys, loadKeys, exportPublicKey, importPublicKey, encryptMessage, decryptMessage, clearKeys } from '../services/crypto';
 import ProfileSettings from './ProfileSettings';
+import KeyFingerprint from './KeyFingerprint';
 
 const drawerWidth = 300;
 
@@ -52,6 +53,10 @@ const Chat = ({ user, onUserUpdate }) => {
     const [peerPublicKeys, setPeerPublicKeys] = useState({}); // userId -> CryptoKey
     const [decryptedMessages, setDecryptedMessages] = useState({}); // messageId -> content
     const [hasStoredKeys, setHasStoredKeys] = useState(false);
+    const [myPublicKeyJwk, setMyPublicKeyJwk] = useState(null); // My public key in JWK format for display
+    const [showKeyFingerprintDialog, setShowKeyFingerprintDialog] = useState(false);
+    const [viewingKeyUser, setViewingKeyUser] = useState(null); // User whose key we're viewing
+    const [fullscreenImage, setFullscreenImage] = useState(null); // Image URL for fullscreen view
 
     // Ref to access current selectedUser inside socket callback closure if needed, 
     // or just use functional state update logic which is safer.
@@ -61,12 +66,32 @@ const Chat = ({ user, onUserUpdate }) => {
         selectedUserRef.current = selectedUser;
     }, [selectedUser]);
 
-    // Load keys on mount
+    // Load keys on mount (check for HMR-preserved passphrase)
     useEffect(() => {
         const initKeys = async () => {
             const stored = localStorage.getItem("chat_e2ee_keys");
             if (stored) {
                 setHasStoredKeys(true);
+                
+                // Check if passphrase was preserved by HMR
+                if (window.__E2EE_PASSPHRASE__) {
+                    try {
+                        const keys = await loadKeys(window.__E2EE_PASSPHRASE__);
+                        setKeyPair(keys);
+                        setPassphrase(window.__E2EE_PASSPHRASE__);
+                        
+                        // Export public key for display
+                        const pubKeyJwk = await exportPublicKey(keys.publicKey);
+                        setMyPublicKeyJwk(pubKeyJwk);
+                        
+                        console.log('E2EE keys restored from HMR-preserved passphrase');
+                        return; // Don't show dialog
+                    } catch (err) {
+                        console.warn('Failed to restore keys from HMR passphrase:', err);
+                        delete window.__E2EE_PASSPHRASE__;
+                    }
+                }
+                
                 setShowPassphraseDialog(true); // Ask for passphrase to decrypt keys
             }
             // If not stored, do nothing. User can set it manually via icon.
@@ -87,8 +112,12 @@ const Chat = ({ user, onUserUpdate }) => {
             setKeyPair(keys);
             setShowPassphraseDialog(false);
 
-            // Broadcast public key
+            // Store passphrase in window for HMR survival (dev only)
+            window.__E2EE_PASSPHRASE__ = passphrase;
+
+            // Broadcast public key and store JWK for display
             const pubKeyJwk = await exportPublicKey(keys.publicKey);
+            setMyPublicKeyJwk(pubKeyJwk);
             socket.emit('update_public_key', { publicKey: pubKeyJwk });
 
         } catch (err) {
@@ -108,6 +137,7 @@ const Chat = ({ user, onUserUpdate }) => {
             setPassphrase('');
             setHasStoredKeys(false);
             setShowPassphraseDialog(true);
+            delete window.__E2EE_PASSPHRASE__;
         }
     };
 
@@ -632,15 +662,33 @@ const Chat = ({ user, onUserUpdate }) => {
                             </ListItemAvatar>
                             <ListItemText
                                 primary={
-                                    <Box display="flex" alignItems="center">
+                                    <Box component="span" display="flex" alignItems="center">
                                         {u.name}
                                         {u.isAdmin === 1 && <AdminPanelSettingsIcon fontSize="small" color="primary" sx={{ ml: 1 }} />}
                                     </Box>
                                 }
                                 secondary={
-                                    <Box display="flex" alignItems="center">
+                                    <Box component="span" display="flex" alignItems="center">
                                         {u.status}
-                                        {u.publicKey && <LockIcon fontSize="inherit" sx={{ ml: 0.5, fontSize: 12, color: 'primary.main' }} />}
+                                        {u.publicKey && (
+                                            <Tooltip title="View key fingerprint">
+                                                <LockIcon 
+                                                    fontSize="inherit" 
+                                                    sx={{ 
+                                                        ml: 0.5, 
+                                                        fontSize: 12, 
+                                                        color: 'primary.main',
+                                                        cursor: 'pointer',
+                                                        '&:hover': { color: 'secondary.main' }
+                                                    }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setViewingKeyUser(u);
+                                                        setShowKeyFingerprintDialog(true);
+                                                    }}
+                                                />
+                                            </Tooltip>
+                                        )}
                                     </Box>
                                 }
                             />
@@ -785,7 +833,25 @@ const Chat = ({ user, onUserUpdate }) => {
                                                         {msg.senderName}
                                                     </Typography>
                                                 </Box>
-                                                <ReactMarkdown>{displayContent}</ReactMarkdown>
+                                                <ReactMarkdown
+                                                    components={{
+                                                        img: ({ node, ...props }) => (
+                                                            <img
+                                                                {...props}
+                                                                style={{
+                                                                    maxWidth: '100px',
+                                                                    maxHeight: '100px',
+                                                                    objectFit: 'cover',
+                                                                    borderRadius: '8px',
+                                                                    cursor: 'pointer',
+                                                                    border: '1px solid rgba(255,255,255,0.2)'
+                                                                }}
+                                                                onClick={() => setFullscreenImage(props.src)}
+                                                                alt={props.alt || 'image'}
+                                                            />
+                                                        )
+                                                    }}
+                                                >{displayContent}</ReactMarkdown>
                                                 <Box display="flex" justifyContent="space-between" alignItems="center" mt={0.5}>
                                                     <Box display="flex" alignItems="center">
                                                         {isEncrypted && (
@@ -944,6 +1010,7 @@ const Chat = ({ user, onUserUpdate }) => {
                 open={showProfileDialog}
                 onClose={() => setShowProfileDialog(false)}
                 user={currentUser}
+                userPublicKey={myPublicKeyJwk}
                 onSave={(updatedUser) => {
                     // Update local user state via parent
                     if (onUserUpdate) {
@@ -955,6 +1022,122 @@ const Chat = ({ user, onUserUpdate }) => {
                     }
                 }}
             />
+
+            {/* Fullscreen Image Dialog */}
+            <Dialog
+                open={!!fullscreenImage}
+                onClose={() => setFullscreenImage(null)}
+                maxWidth={false}
+                PaperProps={{
+                    sx: {
+                        backgroundColor: 'transparent',
+                        boxShadow: 'none',
+                        maxWidth: '95vw',
+                        maxHeight: '95vh'
+                    }
+                }}
+                onClick={() => setFullscreenImage(null)}
+            >
+                {fullscreenImage && (
+                    <img
+                        src={fullscreenImage}
+                        alt="Fullscreen"
+                        style={{
+                            maxWidth: '95vw',
+                            maxHeight: '95vh',
+                            objectFit: 'contain',
+                            borderRadius: '8px'
+                        }}
+                    />
+                )}
+            </Dialog>
+
+            {/* Key Fingerprint Dialog */}
+            <Dialog
+                open={showKeyFingerprintDialog}
+                onClose={() => {
+                    setShowKeyFingerprintDialog(false);
+                    setViewingKeyUser(null);
+                }}
+                maxWidth="sm"
+                PaperProps={{
+                    sx: {
+                        background: 'linear-gradient(135deg, #1a3540 0%, #152428 100%)',
+                        border: '1px solid rgba(0, 217, 255, 0.2)'
+                    }
+                }}
+            >
+                <DialogTitle sx={{ borderBottom: '1px solid rgba(0, 217, 255, 0.1)' }}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <LockIcon color="primary" />
+                        Key Fingerprint
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ pt: 3 }}>
+                    {viewingKeyUser && (
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 3 }}>
+                                <Avatar src={viewingKeyUser.avatar} sx={{ width: 48, height: 48 }} />
+                                <Typography variant="h6">{viewingKeyUser.name}</Typography>
+                            </Box>
+                            
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                                Compare this fingerprint with {viewingKeyUser.name}'s device to verify their identity
+                                and ensure your messages are secure from MITM attacks.
+                            </Typography>
+
+                            <Box sx={{ 
+                                p: 3, 
+                                borderRadius: 2, 
+                                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                                border: '1px solid rgba(0, 217, 255, 0.2)'
+                            }}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+                                    {viewingKeyUser.name}'s Key
+                                </Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                                    <KeyFingerprint 
+                                        publicKey={viewingKeyUser.publicKey} 
+                                        size={100} 
+                                        showHex={true}
+                                    />
+                                </Box>
+                            </Box>
+
+                            {myPublicKeyJwk && (
+                                <Box sx={{ 
+                                    mt: 3,
+                                    p: 3, 
+                                    borderRadius: 2, 
+                                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                                    border: '1px solid rgba(0, 217, 255, 0.2)'
+                                }}>
+                                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Your Key (for comparison)
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                                        <KeyFingerprint 
+                                            publicKey={myPublicKeyJwk} 
+                                            size={100} 
+                                            showHex={true}
+                                        />
+                                    </Box>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0, 217, 255, 0.1)' }}>
+                    <Button 
+                        onClick={() => {
+                            setShowKeyFingerprintDialog(false);
+                            setViewingKeyUser(null);
+                        }}
+                    >
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             <Snackbar
                 open={!isConnected}

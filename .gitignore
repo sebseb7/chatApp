@@ -4,3 +4,4 @@ server/.env
 server/chat.db
 client/dist
 .agent
+server/uploads
