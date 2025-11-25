@@ -129,7 +129,11 @@ Verify the integrity of deployed files by comparing SHA-256 hashes:
 
 **Verify online:** [index.html](https://www.srihash.org/?url=https://c.growheads.de/index.html) | [bundle.js](https://www.srihash.org/?url=https://c.growheads.de/bundle.js) | [sw.js](https://www.srihash.org/?url=https://c.growheads.de/sw.js)
 
-**Bookmarklet:** Drag this to your bookmarks bar → <a href="javascript:(async()=>{const R='https://raw.githubusercontent.com/sebseb7/chatApp/refs/heads/main/README.md',B='https://c.growheads.de',F=['index.html','bundle.js','sw.js'];try{const r=await(await fetch(R)).text(),h={};r.replace(/`([^`]+)`\s*\|\s*`sha256-([^`]+)`/g,(m,f,v)=>F.includes(f)&&(h[f]=v));const s=async u=>{const d=await(await fetch(u)).arrayBuffer(),b=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(b)))};let o='ChatApp Build Verification\n\n';for(const f of F){const a=await s(`${B}/${f}`),e=h[f],m=a===e;o+=`${m?'✅':'❌'} ${f}: ${m?'MATCH':'MISMATCH'}\n`}alert(o)}catch(e){alert('Error: '+e.message)}})()">🔍 Verify ChatApp</a>
+**Bookmarklet:** Create a bookmark with this URL to verify anytime:
+
+```
+javascript:(async()=>{const R='https://raw.githubusercontent.com/sebseb7/chatApp/refs/heads/main/README.md',B='https://c.growheads.de',F=['index.html','bundle.js','sw.js'];try{const r=await(await fetch(R)).text(),h={};r.replace(/`([^`]+)`\s*\|\s*`sha256-([^`]+)`/g,(m,f,v)=>F.includes(f)&&(h[f]=v));const s=async u=>{const d=await(await fetch(u)).arrayBuffer(),b=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(b)))};let o='ChatApp Build Verification\n\n';for(const f of F){const a=await s(`${B}/${f}`),e=h[f],m=a===e;o+=`${m?'✅':'❌'} ${f}: ${m?'MATCH':'MISMATCH'}\n`}alert(o)}catch(e){alert('Error: '+e.message)}})()
+```
 
 ## License
 
