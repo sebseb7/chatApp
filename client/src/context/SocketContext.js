@@ -36,7 +36,8 @@ export const SocketProvider = ({ children, user }) => {
             }
 
             const newSocket = io('/', {
-                withCredentials: true
+                withCredentials: true,
+                transports: ['websocket']
             });
 
             newSocket.on('connect', () => {

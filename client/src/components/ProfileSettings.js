@@ -236,6 +236,7 @@ class ProfileSettings extends Component {
                 onClose={onClose}
                 maxWidth="sm"
                 fullWidth
+                disableRestoreFocus
                 PaperProps={{
                     sx: {
                         background: 'linear-gradient(135deg, #1a3540 0%, #152428 100%)',

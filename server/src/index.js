@@ -85,9 +85,51 @@ initDB().then(db => {
 
     // JSON body parser
     app.use(express.json());
+    
+    // Disable caching for API routes
+    app.use('/api', (req, res, next) => {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        next();
+    });
 
-    // Serve uploaded files
-    app.use('/uploads', express.static(uploadsDir));
+    // Serve uploaded files with caching
+    app.use('/uploads', express.static(uploadsDir, {
+        etag: true,
+        lastModified: true,
+        maxAge: '7d',
+        immutable: true
+    }));
+    
+    // Serve frontend build in production
+    if (process.env.NODE_ENV === 'production') {
+        const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+        
+        // Cache JS/CSS bundles (immutable content-hashed files)
+        app.use('/bundle.js', express.static(path.join(clientDist, 'bundle.js'), {
+            etag: true,
+            lastModified: true,
+            maxAge: '1y',
+            immutable: true
+        }));
+        
+        // Serve index.html with shorter cache (allows updates)
+        app.use(express.static(clientDist, {
+            etag: true,
+            lastModified: true,
+            maxAge: '1h',
+            index: 'index.html'
+        }));
+        
+        // SPA fallback - serve index.html for all non-API routes
+        app.get('*', (req, res, next) => {
+            if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/uploads') || req.path.startsWith('/socket.io')) {
+                return next();
+            }
+            res.sendFile(path.join(clientDist, 'index.html'));
+        });
+    }
 
     configureAuth(passport, db);
 

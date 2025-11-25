@@ -4,7 +4,7 @@
     "description": "Client for Chat App",
     "main": "src/index.js",
     "scripts": {
-        "start": "webpack serve --mode development --open",
+        "start": "webpack serve --mode production --open",
         "build": "webpack --mode production"
     },
     "dependencies": {
