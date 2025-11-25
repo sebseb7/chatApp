@@ -1,5 +1,5 @@
 module.exports = function (io, db) {
-    // Map to track online users: userId -> socketId
+    // Map to track online users: userId -> { socketId, publicKey }
     const onlineUsers = new Map();
 
     io.on('connection', async (socket) => {
@@ -14,16 +14,13 @@ module.exports = function (io, db) {
             clearInterval(pingInterval);
         });
 
-        // We expect the client to send the user ID upon connection or via a 'join' event
-        // For simplicity, let's assume the client emits 'join' with their user ID immediately after connection
-        // In a real app with shared session, we could parse the cookie from the handshake
-
         socket.on('join', async (userId) => {
             try {
                 const user = await db.get('SELECT * FROM users WHERE id = ?', userId);
                 if (user) {
                     socket.userId = userId;
-                    onlineUsers.set(userId, socket.id);
+                    // Initialize with no public key, wait for update_public_key
+                    onlineUsers.set(userId, { socketId: socket.id, publicKey: null });
 
                     // Broadcast updated user list
                     await broadcastUserList();
@@ -33,48 +30,50 @@ module.exports = function (io, db) {
 
                     console.log(`User ${user.name} (${userId}) joined.`);
 
-                    // Fetch missed messages
-                    // Logic: Find messages where I am the receiver (or group member) AND messageId NOT IN message_deliveries
-                    // Note: For groups, we need to join group_members to check membership.
-                    // Simplified query for MVP:
-                    // 1. Direct Messages
+                    // Fetch missed messages (Only Private Messages now)
+                    // Logic: Find messages where I am the receiver AND messageId NOT IN message_deliveries
+                    // Actually, we DELETE delivered messages now. So just fetch ALL messages for me.
+
                     const missedDMs = await db.all(`
                         SELECT m.*, u.name as senderName, u.avatar as senderAvatar
                         FROM messages m
                         JOIN users u ON m.senderId = u.id
                         WHERE m.receiverId = ? 
-                        AND m.id NOT IN (SELECT messageId FROM message_deliveries WHERE userId = ?)
-                    `, userId, userId);
+                    `, userId);
 
-                    // 2. Group Messages
-                    // We need to find groups I am in, then find messages in those groups not delivered to me.
-                    const missedGroupMsgs = await db.all(`
-                        SELECT m.*, u.name as senderName, u.avatar as senderAvatar
-                        FROM messages m
-                        JOIN users u ON m.senderId = u.id
-                        JOIN group_members gm ON m.groupId = gm.groupId
-                        WHERE gm.userId = ?
-                        AND m.id NOT IN (SELECT messageId FROM message_deliveries WHERE userId = ?)
-                    `, userId, userId);
-
-                    const allMissed = [...missedDMs, ...missedGroupMsgs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    // Sort by timestamp
+                    const allMissed = missedDMs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                     for (const msg of allMissed) {
                         socket.emit('receive_message', msg);
 
-                        // Mark as delivered
-                        await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', msg.id, userId);
+                        // Mark as delivered and DELETE from DB
+                        // We don't need message_deliveries table anymore for persistence if we delete.
+                        // But we might want to notify sender?
+                        // If sender is online, notify.
 
-                        // Notify sender of delivery
-                        const senderSocketId = onlineUsers.get(msg.senderId);
-                        if (senderSocketId) {
-                            io.to(senderSocketId).emit('delivery_update', { messageId: msg.id, userId });
+                        const senderData = onlineUsers.get(msg.senderId);
+                        if (senderData) {
+                            io.to(senderData.socketId).emit('delivery_update', { messageId: msg.id, userId });
                         }
+
+                        // DELETE message
+                        await db.run('DELETE FROM messages WHERE id = ?', msg.id);
                     }
 
                 }
             } catch (err) {
                 console.error('Error joining:', err);
+            }
+        });
+
+        socket.on('update_public_key', async ({ publicKey }) => {
+            if (!socket.userId) return;
+            const userData = onlineUsers.get(socket.userId);
+            if (userData) {
+                userData.publicKey = publicKey;
+                onlineUsers.set(socket.userId, userData);
+                await broadcastUserList();
             }
         });
 
@@ -93,14 +92,14 @@ module.exports = function (io, db) {
 
                 await db.run('DELETE FROM groups WHERE id = ?', groupId);
                 await db.run('DELETE FROM group_members WHERE groupId = ?', groupId);
-                await db.run('DELETE FROM messages WHERE groupId = ?', groupId);
+                // No messages to delete for groups (ephemeral)
 
                 // Notify all members
                 for (const member of members) {
                     await broadcastGroupList(member.userId);
                 }
 
-                // Also notify the admin (sender) if not in the list (though they should be)
+                // Also notify the admin (sender) if not in the list
                 await broadcastGroupList(socket.userId);
 
             } catch (err) {
@@ -120,7 +119,7 @@ module.exports = function (io, db) {
             }
         });
 
-        socket.on('send_message', async ({ receiverId, groupId, content, type = 'text' }) => {
+        socket.on('send_message', async ({ receiverId, groupId, content, type = 'text', senderPublicKey }) => {
             if (!socket.userId) return;
             try {
                 if (groupId) {
@@ -144,15 +143,12 @@ module.exports = function (io, db) {
                     }
                 }
 
-                const result = await db.run(
-                    'INSERT INTO messages (senderId, receiverId, groupId, content, type) VALUES (?, ?, ?, ?, ?)',
-                    socket.userId, receiverId || 0, groupId || 0, content, type
-                );
-
                 const sender = await db.get('SELECT name, avatar FROM users WHERE id = ?', socket.userId);
 
+                // Construct message object
+                // Note: We do NOT insert into DB yet.
                 const message = {
-                    id: result.lastID,
+                    id: Date.now(), // Temporary ID for ephemeral/RAM
                     senderId: socket.userId,
                     senderName: sender ? sender.name : 'Unknown',
                     senderAvatar: sender ? sender.avatar : null,
@@ -160,62 +156,57 @@ module.exports = function (io, db) {
                     groupId,
                     content,
                     type,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    senderPublicKey // Pass through the key
                 };
 
                 if (groupId) {
+                    // GROUP MESSAGE: Ephemeral, broadcast to online only.
                     const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
                     if (group && group.isPublic) {
                         // Broadcast to ALL online users
-                        for (const [userId, socketId] of onlineUsers) {
-                            io.to(socketId).emit('receive_message', message);
-                            // Mark delivered for online users
-                            // We don't track deliveries for public groups usually (too much data), 
-                            // but for consistency let's skip or implement if needed. 
-                            // User said "when a user isn't online he will never receive the message... queued icon...".
-                            // This implies reliability.
-                            // But for public groups, tracking delivery for EVERY user is heavy.
-                            // Let's assume "Queued" is critical for DMs as per plan.
-                            // But we should still deliver missed public messages if possible?
-                            // The query in 'join' handles missed group messages.
-                            // So we should record delivery here for online users to avoid re-sending on join.
-                            await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', message.id, userId);
+                        for (const [userId, userData] of onlineUsers) {
+                            io.to(userData.socketId).emit('receive_message', message);
                         }
                     } else {
                         // Broadcast to all group members
                         const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                         for (const member of members) {
-                            const memberSocketId = onlineUsers.get(member.userId);
-                            if (memberSocketId) {
-                                io.to(memberSocketId).emit('receive_message', message);
-                                await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', message.id, member.userId);
+                            const userData = onlineUsers.get(member.userId);
+                            if (userData) {
+                                io.to(userData.socketId).emit('receive_message', message);
                             }
                         }
                     }
                 } else {
-                    // Emit to receiver if online
-                    const receiverSocketId = onlineUsers.get(receiverId);
-                    if (receiverSocketId) {
-                        io.to(receiverSocketId).emit('receive_message', message);
-                        await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', message.id, receiverId);
+                    // PRIVATE MESSAGE
+                    const receiverData = onlineUsers.get(receiverId);
 
-                        // Tell sender it's delivered
+                    if (receiverData) {
+                        // Receiver is ONLINE
+                        // Emit directly
+                        io.to(receiverData.socketId).emit('receive_message', message);
+
+                        // Notify sender of delivery
                         socket.emit('delivery_update', { messageId: message.id, userId: receiverId });
+
+                        // Echo back to sender (with delivered=true)
+                        socket.emit('receive_message', { ...message, delivered: true });
                     } else {
-                        // Receiver is offline
-                        // Tell sender it's queued (implied by lack of delivery_update, or explicit?)
-                        // User wants "queued icon... which should go away soon it's no longer queued".
-                        // So we can send an explicit "queued" event or just NOT send "delivered".
-                        // Client defaults to "queued" until "delivered".
-                        // But we need to make sure the client knows the message ID to track.
-                        // The client receives `receive_message` (echo) below.
-                        // We can add `delivered: false` to that echo.
+                        // Receiver is OFFLINE
+                        // Insert into DB
+                        const result = await db.run(
+                            'INSERT INTO messages (senderId, receiverId, groupId, content, type) VALUES (?, ?, ?, ?, ?)',
+                            socket.userId, receiverId || 0, groupId || 0, content, type
+                        );
+
+                        // Update ID to real DB ID
+                        message.id = result.lastID;
+
+                        // Echo back to sender (with delivered=false)
+                        socket.emit('receive_message', { ...message, delivered: false });
                     }
-                    // Emit back to sender (optimistic UI update usually handles this, but good for confirmation)
-                    // Add initial delivery status
-                    const isDelivered = !!receiverSocketId;
-                    socket.emit('receive_message', { ...message, delivered: isDelivered });
                 }
 
             } catch (err) {
@@ -234,8 +225,6 @@ module.exports = function (io, db) {
         socket.on('create_group', async ({ name, isPublic }) => {
             if (!socket.userId) return;
             try {
-                // Anyone can create a group now.
-                // Only admins can create public groups.
                 const user = await db.get('SELECT isAdmin, name FROM users WHERE id = ?', socket.userId);
 
                 if (isPublic && (!user || !user.isAdmin)) {
@@ -250,13 +239,11 @@ module.exports = function (io, db) {
                 );
                 const groupId = result.lastID;
 
-                // Add creator only if NOT public
                 if (!isPublic) {
                     await db.run('INSERT INTO group_members (groupId, userId) VALUES (?, ?)', groupId, socket.userId);
                 }
 
                 if (isPublic) {
-                    // Notify everyone about the new public group
                     const allUsers = await db.all('SELECT id FROM users');
                     for (const u of allUsers) {
                         await broadcastGroupList(u.id);
@@ -265,7 +252,6 @@ module.exports = function (io, db) {
                     await broadcastGroupList(socket.userId);
                 }
 
-                // System message
                 const systemMsg = `${user.name} created group "${name}"`;
                 await sendSystemMessage(groupId, systemMsg);
 
@@ -277,25 +263,6 @@ module.exports = function (io, db) {
         socket.on('add_to_group', async ({ groupId, userId }) => {
             if (!socket.userId) return;
             try {
-                // Check if admin (or maybe allow creator to add? For now stick to admin as per original req, 
-                // but user said "everyone should be able to create groups". Usually creators can add.
-                // Let's stick to Admin for now to avoid complexity, or check if user is creator?
-                // The prompt said "everyone should be able to create groups". It didn't explicitly say "everyone can add members".
-                // But it implies ownership. For MVP, let's keep "Only admins can add" restriction OR allow if it's a private group?
-                // Let's relax it: Admins OR Group Members can add? Or just Admins?
-                // User said "everyone should be able to create groups".
-                // Let's allow anyone to add members for now, or maybe just the creator?
-                // Schema doesn't track creator. 
-                // Let's allow any member to add others for non-public groups? 
-                // Or just stick to Admin for management to keep it simple as requested previously.
-                // User didn't ask to change "who can add". Just "who can create".
-                // So I will leave "add_to_group" as Admin only for now, unless I see a reason to change.
-                // Actually, if I create a group, I want to add people.
-                // Let's change it: If I am in the group, I can add people?
-                // Or just check if I am admin.
-                // Let's stick to Admin for "add_to_group" to be safe, but the user might be annoyed.
-                // Let's check if the user is an admin.
-                // Check if admin
                 const admin = await db.get('SELECT isAdmin, name FROM users WHERE id = ?', socket.userId);
                 const isMember = await db.get('SELECT * FROM group_members WHERE groupId = ? AND userId = ?', groupId, socket.userId);
 
@@ -304,17 +271,14 @@ module.exports = function (io, db) {
                     return;
                 }
 
-                // Check if target user is invisible
                 const targetUser = await db.get('SELECT isInvisible, name FROM users WHERE id = ?', userId);
                 if (targetUser && targetUser.isInvisible === 1) {
-                    // Only admin can add invisible users
                     if (!admin || !admin.isAdmin) {
                         socket.emit('error', 'Only admins can add invisible users to groups');
                         return;
                     }
                 }
 
-                // Check if already member
                 const existing = await db.get('SELECT * FROM group_members WHERE groupId = ? AND userId = ?', groupId, userId);
                 if (existing) {
                     socket.emit('error', 'User is already in the group');
@@ -323,21 +287,18 @@ module.exports = function (io, db) {
 
                 await db.run('INSERT INTO group_members (groupId, userId) VALUES (?, ?)', groupId, userId);
 
-                // Notify the added user and the admin
-                const addedUserSocketId = onlineUsers.get(userId);
-                if (addedUserSocketId) {
+                const addedUserData = onlineUsers.get(userId);
+                if (addedUserData) {
                     await broadcastGroupList(userId);
                     await broadcastUserList();
                 }
 
                 await broadcastGroupList(socket.userId);
 
-                // Send system message
                 const addedUser = await db.get('SELECT name FROM users WHERE id = ?', userId);
                 const systemMsg = `${admin.name} added ${addedUser.name}`;
                 await sendSystemMessage(groupId, systemMsg);
 
-                // Broadcast updated member list to everyone in group
                 await broadcastGroupMembers(groupId);
 
             } catch (err) {
@@ -357,23 +318,19 @@ module.exports = function (io, db) {
                 let member = await db.get('SELECT isMuted FROM group_members WHERE groupId = ? AND userId = ?', groupId, userId);
 
                 if (!member) {
-                    // If public group, insert as member but muted? 
-                    // Or just insert a record to track mute status.
                     const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
                     if (group && group.isPublic) {
                         await db.run('INSERT INTO group_members (groupId, userId, isMuted) VALUES (?, ?, 1)', groupId, userId);
-                        member = { isMuted: 1 }; // Now they are muted
+                        member = { isMuted: 1 };
                     } else {
-                        return; // Not a member of private group, can't mute
+                        return;
                     }
                 } else {
                     const newMuted = member.isMuted ? 0 : 1;
                     await db.run('UPDATE group_members SET isMuted = ? WHERE groupId = ? AND userId = ?', newMuted, groupId, userId);
                 }
 
-                // Notify user and group
                 const targetUser = await db.get('SELECT name FROM users WHERE id = ?', userId);
-                // Re-fetch mute status to be sure
                 const updatedMember = await db.get('SELECT isMuted FROM group_members WHERE groupId = ? AND userId = ?', groupId, userId);
                 const action = updatedMember.isMuted ? 'muted' : 'unmuted';
 
@@ -398,15 +355,12 @@ module.exports = function (io, db) {
 
                 await db.run('DELETE FROM group_members WHERE groupId = ? AND userId = ?', groupId, userId);
 
-                // Notify removed user (so group disappears)
                 await broadcastGroupList(userId);
 
-                // System message
                 const removedUser = await db.get('SELECT name FROM users WHERE id = ?', userId);
                 const systemMsg = `${admin.name} removed ${removedUser.name}`;
                 await sendSystemMessage(groupId, systemMsg);
 
-                // Broadcast updated member list
                 await broadcastGroupMembers(groupId);
 
             } catch (err) {
@@ -420,18 +374,14 @@ module.exports = function (io, db) {
             const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
             const isAdmin = await db.get('SELECT isAdmin FROM users WHERE id = ?', socket.userId);
 
-            // If public and not admin, return empty list (secret)
             if (group && group.isPublic && (!isAdmin || !isAdmin.isAdmin)) {
                 socket.emit('group_members', { groupId, members: [] });
                 return;
             }
 
-            // Check if member or admin (for private groups)
             const isMember = await db.get('SELECT * FROM group_members WHERE groupId = ? AND userId = ?', groupId, socket.userId);
 
             if (isMember || (isAdmin && isAdmin.isAdmin) || (group && group.isPublic)) {
-                // For public groups, we only want to show users who have an explicit record (e.g. muted users)
-                // We do NOT want to show all users in the system.
                 const query = `
                     SELECT u.id, u.name, u.avatar, gm.isMuted 
                     FROM users u 
@@ -445,13 +395,13 @@ module.exports = function (io, db) {
         });
 
         async function sendSystemMessage(groupId, content) {
-            const result = await db.run(
-                'INSERT INTO messages (senderId, receiverId, groupId, content, type) VALUES (?, ?, ?, ?, ?)',
-                0, 0, groupId, content, 'system'
-            );
+            // System messages are also ephemeral now?
+            // Or should they be stored?
+            // "current message table... should only hold messages that are undelivered private messages. no group messages at all."
+            // So system messages in groups are also ephemeral.
 
             const message = {
-                id: result.lastID,
+                id: Date.now(),
                 senderId: 0,
                 receiverId: 0,
                 groupId,
@@ -460,19 +410,18 @@ module.exports = function (io, db) {
                 timestamp: new Date().toISOString()
             };
 
-            // For public groups, broadcast to everyone
             const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
             if (group && group.isPublic) {
-                for (const [userId, socketId] of onlineUsers) {
-                    io.to(socketId).emit('receive_message', message);
+                for (const [userId, userData] of onlineUsers) {
+                    io.to(userData.socketId).emit('receive_message', message);
                 }
             } else {
                 const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                 for (const member of members) {
-                    const memberSocketId = onlineUsers.get(member.userId);
-                    if (memberSocketId) {
-                        io.to(memberSocketId).emit('receive_message', message);
+                    const userData = onlineUsers.get(member.userId);
+                    if (userData) {
+                        io.to(userData.socketId).emit('receive_message', message);
                     }
                 }
             }
@@ -481,7 +430,6 @@ module.exports = function (io, db) {
         async function broadcastGroupMembers(groupId) {
             const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
-            // For both public and private, we only broadcast actual members (muted or joined)
             const members = await db.all(`
                 SELECT u.id, u.name, u.avatar, gm.isMuted 
                 FROM users u 
@@ -490,22 +438,20 @@ module.exports = function (io, db) {
              `, groupId);
 
             if (group && group.isPublic) {
-                // Public group: Admins see the list (muted users), Users see none
-                for (const [userId, socketId] of onlineUsers) {
+                for (const [userId, userData] of onlineUsers) {
                     const user = await db.get('SELECT isAdmin FROM users WHERE id = ?', userId);
                     if (user && user.isAdmin) {
-                        io.to(socketId).emit('group_members', { groupId, members });
+                        io.to(userData.socketId).emit('group_members', { groupId, members });
                     } else {
-                        io.to(socketId).emit('group_members', { groupId, members: [] });
+                        io.to(userData.socketId).emit('group_members', { groupId, members: [] });
                     }
                 }
             } else {
-                // Private group: Everyone sees members
                 const memberIds = members.map(m => m.id);
                 for (const memberId of memberIds) {
-                    const socketId = onlineUsers.get(memberId);
-                    if (socketId) {
-                        io.to(socketId).emit('group_members', { groupId, members });
+                    const userData = onlineUsers.get(memberId);
+                    if (userData) {
+                        io.to(userData.socketId).emit('group_members', { groupId, members });
                     }
                 }
             }
@@ -522,15 +468,12 @@ module.exports = function (io, db) {
 
                 await db.run('DELETE FROM group_members WHERE groupId = ? AND userId = ?', groupId, socket.userId);
 
-                // Notify user (remove group from list)
                 await broadcastGroupList(socket.userId);
 
-                // System message
                 const user = await db.get('SELECT name FROM users WHERE id = ?', socket.userId);
                 const systemMsg = `${user.name} left the group`;
                 await sendSystemMessage(groupId, systemMsg);
 
-                // Broadcast updated member list
                 await broadcastGroupMembers(groupId);
 
             } catch (err) {
@@ -546,34 +489,21 @@ module.exports = function (io, db) {
         socket.on('mark_read', async ({ messageId, groupId, senderId }) => {
             if (!socket.userId) return;
             try {
-                // Insert read receipt (ignore if already exists)
-                await db.run('INSERT OR IGNORE INTO message_reads (messageId, userId) VALUES (?, ?)', messageId, socket.userId);
+                // We don't store read receipts anymore. Just broadcast.
 
-                // Fetch user info for broadcasting
                 const reader = await db.get('SELECT id, name, avatar, isInvisible FROM users WHERE id = ?', socket.userId);
 
-                // Determine who should see this read receipt
-                // Logic:
-                // 1. If reader is Visible -> Broadcast to everyone (who has the message)
-                // 2. If reader is Invisible:
-                //    - If Public Group -> Do NOT broadcast (or broadcast only to admins? No, user said "ignore invisible people of course")
-                //    - If Private Group/DM -> Broadcast (User said "in private group or direct talk you also see the read state")
-
                 let shouldBroadcast = true;
-                let targetSocketIds = []; // If empty and shouldBroadcast is true, we might broadcast to room/all
 
                 if (reader.isInvisible) {
                     if (groupId) {
                         const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
                         if (group && group.isPublic) {
-                            // Public group + Invisible user -> Do NOT show read receipt
                             shouldBroadcast = false;
                         } else {
-                            // Private group + Invisible user -> Show read receipt
                             shouldBroadcast = true;
                         }
                     } else {
-                        // Direct Message + Invisible user -> Show read receipt
                         shouldBroadcast = true;
                     }
                 }
@@ -591,33 +521,23 @@ module.exports = function (io, db) {
                     if (groupId) {
                         const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
                         if (group && group.isPublic) {
-                            // Public Group: Broadcast to all online users (except if reader is invisible, handled above)
-                            // Wait, if reader is visible, we broadcast to everyone.
-                            for (const [uid, sid] of onlineUsers) {
-                                io.to(sid).emit('message_read_update', readUpdate);
+                            for (const [uid, userData] of onlineUsers) {
+                                io.to(userData.socketId).emit('message_read_update', readUpdate);
                             }
                         } else {
-                            // Private Group: Broadcast to members
                             const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
                             for (const member of members) {
-                                const sid = onlineUsers.get(member.userId);
-                                if (sid) io.to(sid).emit('message_read_update', readUpdate);
+                                const userData = onlineUsers.get(member.userId);
+                                if (userData) io.to(userData.socketId).emit('message_read_update', readUpdate);
                             }
                         }
                     } else {
-                        // Direct Message
-                        // Notify sender and receiver (reader)
-                        // Reader (self)
                         socket.emit('message_read_update', readUpdate);
 
-                        // Sender (if online)
-                        // We need to know who the other person is. 
-                        // In DM, senderId passed from client is the OTHER person (the one who sent the message).
-                        // Wait, if I read a message, I am the reader. The message sender is `senderId`.
                         if (senderId) {
-                            const senderSocketId = onlineUsers.get(senderId);
-                            if (senderSocketId) {
-                                io.to(senderSocketId).emit('message_read_update', readUpdate);
+                            const senderData = onlineUsers.get(senderId);
+                            if (senderData) {
+                                io.to(senderData.socketId).emit('message_read_update', readUpdate);
                             }
                         }
                     }
@@ -628,10 +548,9 @@ module.exports = function (io, db) {
             }
         });
 
-        // Helper to send the list of groups a user belongs to
         async function broadcastGroupList(targetUserId) {
-            const socketId = onlineUsers.get(targetUserId);
-            if (!socketId) return;
+            const userData = onlineUsers.get(targetUserId);
+            if (!userData) return;
 
             const groups = await db.all(`
             SELECT DISTINCT g.id, g.name, g.isPublic
@@ -640,23 +559,18 @@ module.exports = function (io, db) {
             WHERE g.isPublic = 1 OR gm.userId = ?
         `, targetUserId);
 
-            io.to(socketId).emit('group_list', groups);
+            io.to(userData.socketId).emit('group_list', groups);
         }
 
         async function broadcastUserList() {
             try {
-                // Get all users
                 const users = await db.all('SELECT id, name, avatar, isInvisible, isAdmin FROM users');
-
-                // Identify admins for quick lookup
                 const adminIds = new Set(users.filter(u => u.isAdmin).map(u => u.id));
 
-                // For each online user, calculate who they can see
-                for (const [userId, socketId] of onlineUsers) {
+                for (const [userId, userData] of onlineUsers) {
                     const visibleUsers = [];
                     const isViewerAdmin = adminIds.has(userId);
 
-                    // Optimization: Pre-fetch users who share a private group with the viewer
                     let sharedPrivateGroupUserIds = new Set();
                     if (!isViewerAdmin) {
                         const myPrivateGroups = await db.all(`
@@ -679,34 +593,35 @@ module.exports = function (io, db) {
                     }
 
                     for (const otherUser of users) {
+                        // Attach public key if available
+                        const otherUserData = onlineUsers.get(otherUser.id);
+                        const publicKey = otherUserData ? otherUserData.publicKey : null;
+
+                        const userWithKey = { ...otherUser, publicKey };
+
                         if (otherUser.id === userId) {
-                            visibleUsers.push({ ...otherUser, status: 'online' }); // See self
+                            visibleUsers.push({ ...userWithKey, status: 'online' });
                             continue;
                         }
 
-                        const isOtherOnline = onlineUsers.has(otherUser.id);
+                        const isOtherOnline = !!otherUserData;
                         let status = isOtherOnline ? 'online' : 'offline';
 
                         if (otherUser.isInvisible) {
                             if (isViewerAdmin) {
-                                // Admins see invisible users
-                                // If online, show as 'invisible' so admin knows
                                 if (isOtherOnline) status = 'invisible';
-                                visibleUsers.push({ ...otherUser, status });
+                                visibleUsers.push({ ...userWithKey, status });
                             } else if (sharedPrivateGroupUserIds.has(otherUser.id)) {
-                                // Shares a private group -> Privacy lifted
-                                visibleUsers.push({ ...otherUser, status });
+                                visibleUsers.push({ ...userWithKey, status });
                             } else {
-                                // Invisible and no shared private group -> Completely hidden
                                 continue;
                             }
                         } else {
-                            // Normal visible user
-                            visibleUsers.push({ ...otherUser, status });
+                            visibleUsers.push({ ...userWithKey, status });
                         }
                     }
 
-                    io.to(socketId).emit('user_list', visibleUsers);
+                    io.to(userData.socketId).emit('user_list', visibleUsers);
                 }
 
             } catch (err) {

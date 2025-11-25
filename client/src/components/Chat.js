@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Box, Drawer, List, ListItem, ListItemText, ListItemAvatar, Avatar,
-    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip, Snackbar, Alert
+    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip, Snackbar, Alert, Switch, Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -13,8 +13,11 @@ import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import MarkdownIcon from '@mui/icons-material/Code';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import LockIcon from '@mui/icons-material/Lock';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ReactMarkdown from 'react-markdown';
 import { useSocket } from '../context/SocketContext';
+import { generateAndStoreKeys, loadKeys, exportPublicKey, importPublicKey, encryptMessage, decryptMessage, clearKeys } from '../services/crypto';
 
 const drawerWidth = 300;
 
@@ -38,6 +41,15 @@ const Chat = ({ user }) => {
     const [readReceipts, setReadReceipts] = useState({}); // { messageId: [user1, user2...] }
     const [deliveryStatus, setDeliveryStatus] = useState({}); // { messageId: 'delivered' | 'queued' }
 
+    // E2EE State
+    const [keyPair, setKeyPair] = useState(null);
+    const [passphrase, setPassphrase] = useState('');
+    const [showPassphraseDialog, setShowPassphraseDialog] = useState(false);
+    const [isE2EEEnabled, setIsE2EEEnabled] = useState(false);
+    const [peerPublicKeys, setPeerPublicKeys] = useState({}); // userId -> CryptoKey
+    const [decryptedMessages, setDecryptedMessages] = useState({}); // messageId -> content
+    const [hasStoredKeys, setHasStoredKeys] = useState(false);
+
     // Ref to access current selectedUser inside socket callback closure if needed, 
     // or just use functional state update logic which is safer.
     const selectedUserRef = useRef(selectedUser);
@@ -46,11 +58,74 @@ const Chat = ({ user }) => {
         selectedUserRef.current = selectedUser;
     }, [selectedUser]);
 
+    // Load keys on mount
+    useEffect(() => {
+        const initKeys = async () => {
+            const stored = localStorage.getItem("chat_e2ee_keys");
+            if (stored) {
+                setHasStoredKeys(true);
+                setShowPassphraseDialog(true); // Ask for passphrase to decrypt keys
+            }
+            // If not stored, do nothing. User can set it manually via icon.
+        };
+        initKeys();
+    }, []);
+
+    const handlePassphraseSubmit = async () => {
+        try {
+            let keys;
+            const stored = localStorage.getItem("chat_e2ee_keys");
+            if (stored) {
+                keys = await loadKeys(passphrase);
+            } else {
+                keys = await generateAndStoreKeys(passphrase);
+                setHasStoredKeys(true);
+            }
+            setKeyPair(keys);
+            setShowPassphraseDialog(false);
+
+            // Broadcast public key
+            const pubKeyJwk = await exportPublicKey(keys.publicKey);
+            socket.emit('update_public_key', { publicKey: pubKeyJwk });
+
+        } catch (err) {
+            if (hasStoredKeys) {
+                alert("Incorrect passphrase. If you forgot it, please reset your keys (warning: you will lose access to past encrypted messages).");
+            } else {
+                alert("Error generating keys: " + err.message);
+            }
+            console.error(err);
+        }
+    };
+
+    const handleClearKeys = async () => {
+        if (window.confirm("Are you sure? You will lose access to encrypted history if you don't remember the passphrase.")) {
+            await clearKeys();
+            setKeyPair(null);
+            setPassphrase('');
+            setHasStoredKeys(false);
+            setShowPassphraseDialog(true);
+        }
+    };
+
     useEffect(() => {
         if (!socket) return;
 
-        socket.on('user_list', (userList) => {
+        socket.on('user_list', async (userList) => {
             setUsers(userList);
+
+            // Import public keys from users
+            const newPeerKeys = { ...peerPublicKeys };
+            for (const u of userList) {
+                if (u.publicKey && !newPeerKeys[u.id]) {
+                    try {
+                        newPeerKeys[u.id] = await importPublicKey(u.publicKey);
+                    } catch (e) {
+                        console.error("Failed to import key for user", u.id, e);
+                    }
+                }
+            }
+            setPeerPublicKeys(newPeerKeys);
         });
 
         socket.on('group_list', (groupList) => {
@@ -63,8 +138,63 @@ const Chat = ({ user }) => {
             }
         });
 
-        socket.on('receive_message', (message) => {
-            setMessages((prev) => [...prev, message]);
+        socket.on('receive_message', async (message) => {
+            setMessages((prev) => {
+                // Deduplicate: If we have an optimistic message with same ID (unlikely as we used Date.now())
+                // or if we want to replace the optimistic one.
+                // Ideally, server returns the tempId we sent, but we didn't send one.
+                // For now, just append.
+                return [...prev, message];
+            });
+
+            // Decrypt if EEE
+            if (message.type === 'eee' && keyPair) {
+                try {
+                    let otherKey;
+                    if (message.senderId === user.id) {
+                        // My own message echoed back.
+                        // I need the receiver's public key to decrypt it.
+                        // The receiverId is in the message.
+                        otherKey = peerPublicKeys[message.receiverId];
+
+                        // If I don't have it in peerPublicKeys (maybe they are offline now?), 
+                        // I might have used it to encrypt, so I should have it.
+                        // But peerPublicKeys comes from user_list which might only have online users?
+                        // Wait, user_list has all users? No, only online?
+                        // The server broadcasts `user_list` with online users.
+                        // If I sent a message to an offline user, I must have had their key cached or from a previous session?
+                        // Actually, `peerPublicKeys` state is reset on reload.
+                        // If I reload and the receiver is offline, I won't have their key in `peerPublicKeys`.
+                        // So I cannot decrypt my own sent history to an offline user if I don't persist their public key.
+                        // BUT, for the immediate echo, the receiver might still be in the list or I just used it.
+
+                        if (!otherKey) {
+                            // Fallback: If I just sent it, I might still have the key context?
+                            // For now, let's try to find it in the users list even if offline?
+                            // The users list from server `user_list` event only contains what server sends.
+                            // Server sends all users? Let's check server logic.
+                            // Server sends `visibleUsers`.
+                        }
+                    } else {
+                        // Received message
+                        otherKey = peerPublicKeys[message.senderId];
+                        if (!otherKey && message.senderPublicKey) {
+                            otherKey = await importPublicKey(message.senderPublicKey);
+                            // Cache it?
+                            setPeerPublicKeys(prev => ({ ...prev, [message.senderId]: otherKey }));
+                        }
+                    }
+
+                    if (otherKey) {
+                        const decrypted = await decryptMessage(JSON.parse(message.content), keyPair.privateKey, otherKey);
+                        setDecryptedMessages(prev => ({ ...prev, [message.id]: decrypted }));
+                    } else {
+                        console.warn("Missing public key for message", message.id);
+                    }
+                } catch (e) {
+                    console.error("Decryption failed", e);
+                }
+            }
 
             // Set initial delivery status if provided (for sender)
             if (message.senderId === user.id && message.delivered !== undefined) {
@@ -118,6 +248,13 @@ const Chat = ({ user }) => {
 
         socket.emit('get_groups');
 
+        // Re-broadcast key on reconnect
+        if (keyPair) {
+            exportPublicKey(keyPair.publicKey).then(jwk => {
+                socket.emit('update_public_key', { publicKey: jwk });
+            });
+        }
+
         return () => {
             socket.off('user_list');
             socket.off('group_list');
@@ -126,18 +263,26 @@ const Chat = ({ user }) => {
             socket.off('message_read_update');
             socket.off('delivery_update');
         };
-    }, [socket, user.id]); // Added user.id dependency
+    }, [socket, user.id, keyPair, peerPublicKeys]); // Added dependencies
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
+    }, [messages, decryptedMessages]);
 
     // Fetch members when group selected
     useEffect(() => {
         if (selectedUser?.isGroup) {
             socket.emit('get_group_members', { groupId: selectedUser.id });
+            setIsE2EEEnabled(false); // Disable E2EE for groups
         } else {
             setGroupMembers([]);
+            // Check if we can enable E2EE (both have keys)
+            if (selectedUser && !selectedUser.isGroup) {
+                // We can enable if we have their key.
+                // But user can toggle it.
+                // Default to off? Or remember preference?
+                setIsE2EEEnabled(false);
+            }
         }
     }, [selectedUser, socket]);
 
@@ -181,7 +326,7 @@ const Chat = ({ user }) => {
         window.location.href = '/api/logout';
     };
 
-    const handleSend = () => {
+    const handleSend = async () => {
         if (input.trim() && selectedUser) {
             if (selectedUser.isGroup) {
                 socket.emit('send_message', {
@@ -190,10 +335,58 @@ const Chat = ({ user }) => {
                     type: 'text'
                 });
             } else {
+                let content = input;
+                let type = 'text';
+                let senderPublicKey = null;
+
+                if (isE2EEEnabled) {
+                    if (!keyPair) {
+                        alert("You must set a passphrase to use E2EE.");
+                        setShowPassphraseDialog(true);
+                        return;
+                    }
+                    const receiverKey = peerPublicKeys[selectedUser.id];
+                    if (!receiverKey) {
+                        alert("Receiver's public key not found. They might be offline or haven't set a passphrase.");
+                        return;
+                    }
+
+                    try {
+                        const encrypted = await encryptMessage(input, keyPair.privateKey, receiverKey);
+                        content = JSON.stringify(encrypted);
+                        type = 'eee';
+                        // Include my public key so they can decrypt even if I go offline
+                        senderPublicKey = await exportPublicKey(keyPair.publicKey);
+                    } catch (e) {
+                        console.error("Encryption failed", e);
+                        alert("Encryption failed");
+                        return;
+                    }
+                }
+
+                // Optimistic update for E2EE (since server won't echo plain text)
+                if (type === 'eee') {
+                    const tempId = Date.now(); // Temporary ID
+                    const optimisticMsg = {
+                        id: tempId,
+                        senderId: user.id,
+                        senderName: user.name,
+                        senderAvatar: user.avatar,
+                        receiverId: selectedUser.id,
+                        content: input, // Show plain text to self
+                        type: 'eee',
+                        timestamp: new Date().toISOString(),
+                        delivered: false,
+                        isOptimistic: true
+                    };
+                    setMessages(prev => [...prev, optimisticMsg]);
+                }
+
                 socket.emit('send_message', {
                     receiverId: selectedUser.id,
-                    content: input,
-                    type: 'text'
+                    content,
+                    type,
+                    senderPublicKey // Send my key along
                 });
             }
             setInput('');
@@ -273,12 +466,6 @@ const Chat = ({ user }) => {
             setUnreadCounts(prev => ({ ...prev, [targetUser.id]: 0 }));
         } else {
             // User is NOT visible (invisible and no shared private group)
-            // Show error/notification
-            // Since we don't have a global snackbar for custom messages easily accessible without state,
-            // let's just alert for MVP or use the existing error handling mechanism if possible.
-            // But wait, we can use a simple alert or console log, or better, reuse the snackbar?
-            // The existing snackbar is for connection status.
-            // Let's add a local state for error message.
             alert("Cannot start private chat with this user (User is invisible)");
         }
     };
@@ -315,6 +502,11 @@ const Chat = ({ user }) => {
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                         <Typography variant="caption">{currentUser.name} ({currentUser.isInvisible ? 'Invisible' : 'Visible'})</Typography>
                         <Box>
+                            <Tooltip title="Set Passphrase for E2EE">
+                                <IconButton size="small" onClick={() => setShowPassphraseDialog(true)}>
+                                    <VpnKeyIcon color={keyPair ? "primary" : "disabled"} />
+                                </IconButton>
+                            </Tooltip>
                             <Tooltip title={currentUser.isInvisible
                                 ? "You are currently invisible. You appear offline, and only users in shared private groups can start chats with you."
                                 : "You are currently visible. Anyone can see you and start a chat."}>
@@ -417,7 +609,12 @@ const Chat = ({ user }) => {
                                         {u.isAdmin === 1 && <AdminPanelSettingsIcon fontSize="small" color="primary" sx={{ ml: 1 }} />}
                                     </Box>
                                 }
-                                secondary={u.status}
+                                secondary={
+                                    <Box display="flex" alignItems="center">
+                                        {u.status}
+                                        {u.publicKey && <LockIcon fontSize="inherit" sx={{ ml: 0.5, fontSize: 12, color: 'primary.main' }} />}
+                                    </Box>
+                                }
                             />
                         </ListItem>
                     ))}
@@ -459,7 +656,25 @@ const Chat = ({ user }) => {
                                     </Box>
                                 )}
                             </Box>
-                            <Box>
+                            <Box display="flex" alignItems="center" gap={1}>
+                                {!selectedUser.isGroup && (
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={isE2EEEnabled}
+                                                onChange={(e) => setIsE2EEEnabled(e.target.checked)}
+                                                color="primary"
+                                                disabled={!keyPair || !peerPublicKeys[selectedUser.id]}
+                                            />
+                                        }
+                                        label={
+                                            <Box display="flex" alignItems="center">
+                                                <Typography variant="body2" sx={{ mr: 0.5 }}>EEE</Typography>
+                                                <LockIcon fontSize="small" />
+                                            </Box>
+                                        }
+                                    />
+                                )}
                                 {selectedUser.isGroup && !selectedUser.isPublic && (
                                     <Button
                                         color="error"
@@ -476,9 +691,6 @@ const Chat = ({ user }) => {
                             </Box>
                         </Box>
 
-                        {/* Dialogs would go here, but for MVP let's use simple prompts or inline inputs if needed.
-                            Actually, let's just add the Dialog components from MUI. */}
-
                         <Paper sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto' }}>
                             {filteredMessages.map((msg, index) => {
                                 if (msg.type === 'system') {
@@ -490,6 +702,31 @@ const Chat = ({ user }) => {
                                         </Box>
                                     );
                                 }
+
+                                let displayContent = msg.content;
+                                let isEncrypted = msg.type === 'eee';
+
+                                if (isEncrypted) {
+                                    if (msg.senderId === user.id && msg.isOptimistic) {
+                                        // Optimistic message is plain text
+                                        displayContent = msg.content;
+                                    } else if (msg.senderId === user.id) {
+                                        // My own message echoed back.
+                                        // Try to decrypt with receiver's key if available
+                                        if (decryptedMessages[msg.id]) {
+                                            displayContent = decryptedMessages[msg.id];
+                                        } else {
+                                            displayContent = "🔒 Encrypted Message";
+                                        }
+                                    } else {
+                                        // Received message
+                                        displayContent = decryptedMessages[msg.id] || "🔒 Encrypted Message (Decrypting...)";
+                                        if (decryptedMessages[msg.id] === undefined && keyPair) {
+                                            // Trigger decryption if not done yet (handled in useEffect, but just in case)
+                                        }
+                                    }
+                                }
+
                                 return (
                                     <Box key={index} sx={{
                                         display: 'flex',
@@ -520,10 +757,19 @@ const Chat = ({ user }) => {
                                                         {msg.senderName}
                                                     </Typography>
                                                 </Box>
-                                                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                                                <Typography variant="caption" display="block" align="right">
-                                                    {new Date(msg.timestamp).toLocaleTimeString()}
-                                                </Typography>
+                                                <ReactMarkdown>{displayContent}</ReactMarkdown>
+                                                <Box display="flex" justifyContent="space-between" alignItems="center" mt={0.5}>
+                                                    <Box display="flex" alignItems="center">
+                                                        {isEncrypted && (
+                                                            <Tooltip title="End-to-End Encrypted">
+                                                                <LockIcon sx={{ fontSize: 12, color: 'success.main', mr: 0.5 }} />
+                                                            </Tooltip>
+                                                        )}
+                                                        <Typography variant="caption" display="block" align="right">
+                                                            {new Date(msg.timestamp).toLocaleTimeString()}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
                                             </Paper>
                                             {/* Read Receipts & Delivery Status */}
                                             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5, width: '100%', alignItems: 'center' }}>
@@ -574,7 +820,7 @@ const Chat = ({ user }) => {
                             <TextField
                                 fullWidth
                                 variant="outlined"
-                                placeholder="Type a message..."
+                                placeholder={isE2EEEnabled ? "Type an encrypted message..." : "Type a message..."}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onPaste={handlePaste}
@@ -586,6 +832,9 @@ const Chat = ({ user }) => {
                                 }}
                                 multiline
                                 maxRows={4}
+                                InputProps={{
+                                    startAdornment: isE2EEEnabled ? <LockIcon color="primary" sx={{ mr: 1 }} /> : null
+                                }}
                             />
                             <IconButton color="primary" onClick={handleSend} sx={{ mb: 0.5 }}>
                                 <SendIcon />
@@ -598,6 +847,35 @@ const Chat = ({ user }) => {
                     </Box>
                 )}
             </Box>
+
+            {/* Passphrase Dialog */}
+            <Dialog open={showPassphraseDialog} onClose={() => setShowPassphraseDialog(false)}>
+                <DialogTitle>Set E2EE Passphrase</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                        Enter a passphrase to generate your encryption keys.
+                        This passphrase is required to decrypt your private messages.
+                        If you lose it, you lose access to your encrypted history.
+                    </Typography>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Passphrase"
+                        type="password"
+                        fullWidth
+                        variant="outlined"
+                        value={passphrase}
+                        onChange={(e) => setPassphrase(e.target.value)}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Reset Keys</Button>}
+                    <Button onClick={() => setShowPassphraseDialog(false)}>Cancel</Button>
+                    <Button onClick={handlePassphraseSubmit} disabled={!passphrase}>
+                        {hasStoredKeys ? "Unlock" : "Generate Keys"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Simple Dialogs for Group Creation and Adding Members */}
             {showGroupDialog && (
