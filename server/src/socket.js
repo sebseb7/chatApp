@@ -5,6 +5,54 @@ module.exports = function (io, db) {
     // Using Set of socketIds to support multiple connections per user
     const onlineUsers = new Map();
 
+    // Helper to check if targetUserId is visible to viewerUserId
+    // Returns true if the viewer can see (and message) the target
+    async function isUserVisibleTo(targetUserId, viewerUserId) {
+        // Check if target user exists
+        const targetUser = await db.get('SELECT id, isInvisible FROM users WHERE id = ?', targetUserId);
+        if (!targetUser) {
+            return false; // User doesn't exist
+        }
+
+        // Non-invisible users are visible to everyone
+        if (!targetUser.isInvisible) {
+            return true;
+        }
+
+        // Target is invisible - check if viewer is admin
+        const viewer = await db.get('SELECT isAdmin FROM users WHERE id = ?', viewerUserId);
+        if (viewer && viewer.isAdmin) {
+            return true; // Admins can see everyone
+        }
+
+        // Check if they share a private group
+        const sharedGroup = await db.get(`
+            SELECT 1 FROM group_members gm1
+            JOIN group_members gm2 ON gm1.groupId = gm2.groupId
+            JOIN groups g ON gm1.groupId = g.id
+            WHERE gm1.userId = ? AND gm2.userId = ? AND g.isPublic = 0
+            LIMIT 1
+        `, viewerUserId, targetUserId);
+        if (sharedGroup) {
+            return true;
+        }
+
+        // Check if they have DM history
+        const dmHistory = await db.get(`
+            SELECT 1 FROM messages 
+            WHERE groupId = 0 AND (
+                (senderId = ? AND receiverId = ?) OR 
+                (senderId = ? AND receiverId = ?)
+            )
+            LIMIT 1
+        `, viewerUserId, targetUserId, targetUserId, viewerUserId);
+        if (dmHistory) {
+            return true;
+        }
+
+        return false; // Invisible user not visible to this viewer
+    }
+
     io.on('connection', async (socket) => {
         console.log('New socket connection:', socket.id);
 
@@ -234,7 +282,13 @@ module.exports = function (io, db) {
                         }
                     }
                 } else {
-                    // PRIVATE MESSAGE: Always store in DB
+                    // PRIVATE MESSAGE: Validate receiver is visible to sender
+                    const canMessage = await isUserVisibleTo(receiverId, socket.userId);
+                    if (!canMessage) {
+                        socket.emit('error', 'Cannot send message to this user');
+                        return;
+                    }
+
                     const receiverData = onlineUsers.get(receiverId);
                     const isDelivered = !!receiverData;
 
