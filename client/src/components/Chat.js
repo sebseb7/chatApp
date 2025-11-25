@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Box, Drawer, List, ListItem, ListItemText, ListItemAvatar, Avatar,
-    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip, Snackbar, Alert, Switch, Dialog, DialogTitle, DialogContent, DialogActions
+    Typography, TextField, Button, Paper, IconButton, Badge, Divider, Chip, Checkbox, FormControlLabel, Tooltip, Snackbar, Alert, Switch, Dialog, DialogTitle, DialogContent, DialogActions, useTheme, useMediaQuery
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -46,23 +47,23 @@ const playDingSound = () => {
             // AudioContext not ready yet (no user gesture happened)
             return;
         }
-        
+
         // Create oscillator for the ding tone
         const oscillator = ctx.createOscillator();
         const gainNode = ctx.createGain();
-        
+
         oscillator.connect(gainNode);
         gainNode.connect(ctx.destination);
-        
+
         // Pleasant ding frequency (E5 note)
         oscillator.frequency.setValueAtTime(659.25, ctx.currentTime);
         oscillator.type = 'sine';
-        
+
         // Quick fade in and out for a soft ding
         gainNode.gain.setValueAtTime(0, ctx.currentTime);
         gainNode.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.01);
         gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        
+
         oscillator.start(ctx.currentTime);
         oscillator.stop(ctx.currentTime + 0.5);
     } catch (e) {
@@ -78,6 +79,9 @@ const Chat = ({ user, onUserUpdate }) => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
+
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     const [groupMembers, setGroupMembers] = useState([]);
 
@@ -120,7 +124,7 @@ const Chat = ({ user, onUserUpdate }) => {
             const stored = localStorage.getItem("chat_e2ee_keys");
             if (stored) {
                 setHasStoredKeys(true);
-                
+
                 // Check if passphrase was preserved by HMR (sessionStorage survives HMR reliably)
                 const savedPassphrase = sessionStorage.getItem("chat_e2ee_passphrase");
                 if (savedPassphrase) {
@@ -128,11 +132,11 @@ const Chat = ({ user, onUserUpdate }) => {
                         const keys = await loadKeys(savedPassphrase, user.googleId);
                         setKeyPair(keys);
                         setPassphrase(savedPassphrase);
-                        
+
                         // Export public key for display
                         const pubKeyJwk = await exportPublicKey(keys.publicKey);
                         setMyPublicKeyJwk(pubKeyJwk);
-                        
+
                         console.log('E2EE keys restored from session-preserved passphrase');
                         return; // Don't show dialog
                     } catch (err) {
@@ -140,7 +144,7 @@ const Chat = ({ user, onUserUpdate }) => {
                         sessionStorage.removeItem("chat_e2ee_passphrase");
                     }
                 }
-                
+
                 setShowPassphraseDialog(true); // Ask for passphrase to decrypt keys
             }
             // If not stored, do nothing. User can set it manually via icon.
@@ -154,7 +158,7 @@ const Chat = ({ user, onUserUpdate }) => {
             setPreviewKeyJwk(null);
             return;
         }
-        
+
         const timer = setTimeout(async () => {
             try {
                 const preview = await previewPublicKey(passphrase, user.googleId);
@@ -164,7 +168,7 @@ const Chat = ({ user, onUserUpdate }) => {
                 setPreviewKeyJwk(null);
             }
         }, 300); // 300ms debounce
-        
+
         return () => clearTimeout(timer);
     }, [passphrase, showPassphraseDialog, user.googleId]);
 
@@ -381,10 +385,9 @@ const Chat = ({ user, onUserUpdate }) => {
             setGroupMembers([]);
             // Check if we can enable E2EE (both have keys)
             if (selectedUser && !selectedUser.isGroup) {
-                // We can enable if we have their key.
-                // But user can toggle it.
-                // Default to off? Or remember preference?
-                setIsE2EEEnabled(false);
+                // Enable by default if we have their key and our own keys are set up
+                const hasPeerKey = !!peerPublicKeys[selectedUser.id];
+                setIsE2EEEnabled(!!keyPair && hasPeerKey);
             }
         }
     }, [selectedUser, socket]);
@@ -595,10 +598,11 @@ const Chat = ({ user, onUserUpdate }) => {
             <Drawer
                 variant="permanent"
                 sx={{
-                    width: { xs: 280, sm: drawerWidth },
+                    width: isMobile ? '100%' : drawerWidth,
                     flexShrink: 0,
+                    display: isMobile && selectedUser ? 'none' : 'block',
                     [`& .MuiDrawer-paper`]: {
-                        width: { xs: 280, sm: drawerWidth },
+                        width: isMobile ? '100%' : drawerWidth,
                         boxSizing: 'border-box',
                         background: 'linear-gradient(180deg, #152428 0%, #0f1f23 100%)',
                     },
@@ -607,8 +611,8 @@ const Chat = ({ user, onUserUpdate }) => {
                 <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 217, 255, 0.2)', background: 'rgba(15, 76, 92, 0.3)' }}>
                     <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                         <Box display="flex" alignItems="center" gap={1}>
-                            <Avatar 
-                                src={currentUser.avatar} 
+                            <Avatar
+                                src={currentUser.avatar}
                                 sx={{ width: 32, height: 32, cursor: 'pointer' }}
                                 onClick={() => setShowProfileDialog(true)}
                             />
@@ -739,8 +743,8 @@ const Chat = ({ user, onUserUpdate }) => {
                                             <Tooltip title="View key fingerprint" disableInteractive>
                                                 <IconButton
                                                     size="small"
-                                                    sx={{ 
-                                                        ml: 0.5, 
+                                                    sx={{
+                                                        ml: 0.5,
                                                         p: 0,
                                                         color: 'primary.main',
                                                         '&:hover': { color: 'secondary.main', backgroundColor: 'transparent' }
@@ -762,12 +766,12 @@ const Chat = ({ user, onUserUpdate }) => {
                         </ListItem>
                     ))}
                 </List>
-                
+
                 {/* GitHub Link */}
-                <Box 
-                    sx={{ 
-                        position: 'absolute', 
-                        bottom: 12, 
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        bottom: 12,
                         left: 12,
                         opacity: 0.5,
                         transition: 'opacity 0.2s',
@@ -784,47 +788,61 @@ const Chat = ({ user, onUserUpdate }) => {
                             sx={{ color: 'text.secondary' }}
                         >
                             <svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor">
-                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
                             </svg>
                         </IconButton>
                     </Tooltip>
                 </Box>
             </Drawer>
 
-            <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
+            <Box component="main" sx={{
+                flexGrow: 1,
+                p: isMobile ? 1 : 3,
+                display: isMobile && !selectedUser ? 'none' : 'flex',
+                flexDirection: 'column',
+                height: '100dvh',
+                width: isMobile ? '100%' : `calc(100% - ${drawerWidth}px)`
+            }}>
                 {selectedUser ? (
                     <>
                         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                            <Box>
-                                <Typography variant="h5">{selectedUser.isGroup && selectedUser.isPublic ? selectedUser.name : `Chat with ${selectedUser.name}`}</Typography>
-                                {selectedUser.isGroup && (
-                                    <Box>
-                                        <Typography variant="caption" color="textSecondary">
-                                            {selectedUser.isPublic
-                                                ? "Public Group"
-                                                : `${groupMembers.length} members`
-                                            }
-                                        </Typography>
-                                        {!selectedUser.isPublic && (
-                                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                                                {groupMembers.map(m => (
-                                                    <Chip
-                                                        key={m.id}
-                                                        avatar={<Avatar src={m.avatar} />}
-                                                        label={m.name}
-                                                        size="small"
-                                                        color={m.isMuted ? "error" : "default"}
-                                                        variant={m.isMuted ? "outlined" : "filled"}
-                                                        onDelete={user.isAdmin === 1 && !selectedUser.isPublic ? () => removeFromGroup(m.id) : undefined}
-                                                        onClick={user.isAdmin === 1 ? () => toggleUserMute(m.id) : undefined}
-                                                        deleteIcon={user.isAdmin === 1 ? <DeleteIcon /> : undefined}
-                                                        sx={{ textDecoration: m.isMuted ? 'line-through' : 'none' }}
-                                                    />
-                                                ))}
-                                            </Box>
-                                        )}
-                                    </Box>
+                            <Box display="flex" alignItems="center" gap={1}>
+                                {isMobile && (
+                                    <IconButton onClick={() => setSelectedUser(null)} edge="start" color="inherit">
+                                        <ArrowBackIcon />
+                                    </IconButton>
                                 )}
+                                <Box>
+                                    <Typography variant="h5">{selectedUser.isGroup && selectedUser.isPublic ? selectedUser.name : `Chat with ${selectedUser.name}`}</Typography>
+                                    {selectedUser.isGroup && (
+                                        <Box>
+                                            <Typography variant="caption" color="textSecondary">
+                                                {selectedUser.isPublic
+                                                    ? "Public Group"
+                                                    : `${groupMembers.length} members`
+                                                }
+                                            </Typography>
+                                            {!selectedUser.isPublic && (
+                                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+                                                    {groupMembers.map(m => (
+                                                        <Chip
+                                                            key={m.id}
+                                                            avatar={<Avatar src={m.avatar} />}
+                                                            label={m.name}
+                                                            size="small"
+                                                            color={m.isMuted ? "error" : "default"}
+                                                            variant={m.isMuted ? "outlined" : "filled"}
+                                                            onDelete={user.isAdmin === 1 && !selectedUser.isPublic ? () => removeFromGroup(m.id) : undefined}
+                                                            onClick={user.isAdmin === 1 ? () => toggleUserMute(m.id) : undefined}
+                                                            deleteIcon={user.isAdmin === 1 ? <DeleteIcon /> : undefined}
+                                                            sx={{ textDecoration: m.isMuted ? 'line-through' : 'none' }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    )}
+                                </Box>
                             </Box>
                             <Box display="flex" alignItems="center" gap={1}>
                                 {!selectedUser.isGroup && (
@@ -983,7 +1001,7 @@ const Chat = ({ user, onUserUpdate }) => {
                             })}
                             <div ref={messagesEndRef} />
                         </Paper>
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end', pb: isMobile ? 2 : 0 }}>
                             <Tooltip
                                 title={
                                     <Box sx={{ p: 1 }}>
@@ -1045,7 +1063,7 @@ const Chat = ({ user, onUserUpdate }) => {
                     </Box>
                 </DialogTitle>
                 <DialogContent>
-                    <form 
+                    <form
                         onSubmit={(e) => { e.preventDefault(); if (passphrase) handlePassphraseSubmit(); }}
                         autoComplete="off"
                         data-lpignore="true"
@@ -1067,20 +1085,20 @@ const Chat = ({ user, onUserUpdate }) => {
                             onChange={(e) => setPassphrase(e.target.value)}
                             autoComplete="new-password"
                             name="encryption-key-passphrase"
-                            inputProps={{ 
+                            inputProps={{
                                 autoComplete: 'new-password',
-                                'data-lpignore': 'true', 
+                                'data-lpignore': 'true',
                                 'data-1p-ignore': 'true',
                                 'data-form-type': 'other'
                             }}
                         />
                     </form>
-                    
+
                     {/* Live Fingerprint Preview - always show to prevent layout shift */}
-                    <Box sx={{ 
-                        mt: 3, 
-                        p: 2, 
-                        borderRadius: 2, 
+                    <Box sx={{
+                        mt: 3,
+                        p: 2,
+                        borderRadius: 2,
                         backgroundColor: 'rgba(0, 0, 0, 0.2)',
                         border: '1px solid rgba(0, 217, 255, 0.2)',
                         textAlign: 'center'
@@ -1090,9 +1108,9 @@ const Chat = ({ user, onUserUpdate }) => {
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                             {previewKeyJwk ? (
-                                <KeyFingerprint 
-                                    publicKey={previewKeyJwk} 
-                                    size={80} 
+                                <KeyFingerprint
+                                    publicKey={previewKeyJwk}
+                                    size={80}
                                     showHex={true}
                                 />
                             ) : (
@@ -1113,11 +1131,11 @@ const Chat = ({ user, onUserUpdate }) => {
                                             ?
                                         </Typography>
                                     </Box>
-                                    <Typography 
-                                        variant="caption" 
-                                        sx={{ 
-                                            mt: 1.5, 
-                                            fontFamily: 'monospace', 
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            mt: 1.5,
+                                            fontFamily: 'monospace',
                                             fontSize: '0.7rem',
                                             color: 'text.secondary',
                                             opacity: 0.5,
@@ -1139,9 +1157,9 @@ const Chat = ({ user, onUserUpdate }) => {
                 <DialogActions>
                     {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Reset Keys</Button>}
                     <Button onClick={() => setShowPassphraseDialog(false)}>Cancel</Button>
-                    <Button 
-                        onClick={handlePassphraseSubmit} 
-                        disabled={!passphrase} 
+                    <Button
+                        onClick={handlePassphraseSubmit}
+                        disabled={!passphrase}
                         variant="contained"
                         sx={{
                             background: 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)',
@@ -1266,15 +1284,15 @@ const Chat = ({ user, onUserUpdate }) => {
                                 <Avatar src={viewingKeyUser.avatar} sx={{ width: 48, height: 48 }} />
                                 <Typography variant="h6">{viewingKeyUser.name}</Typography>
                             </Box>
-                            
+
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                                 Compare this fingerprint with {viewingKeyUser.name}'s device to verify their identity
                                 and ensure your messages are secure from MITM attacks.
                             </Typography>
 
-                            <Box sx={{ 
-                                p: 3, 
-                                borderRadius: 2, 
+                            <Box sx={{
+                                p: 3,
+                                borderRadius: 2,
                                 backgroundColor: 'rgba(0, 0, 0, 0.2)',
                                 border: '1px solid rgba(0, 217, 255, 0.2)'
                             }}>
@@ -1282,19 +1300,19 @@ const Chat = ({ user, onUserUpdate }) => {
                                     {viewingKeyUser.name}'s Fingerprint (safe to publicize)
                                 </Typography>
                                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                    <KeyFingerprint 
-                                        publicKey={viewingKeyUser.publicKey} 
-                                        size={100} 
+                                    <KeyFingerprint
+                                        publicKey={viewingKeyUser.publicKey}
+                                        size={100}
                                         showHex={true}
                                     />
                                 </Box>
                             </Box>
 
                             {myPublicKeyJwk && (
-                                <Box sx={{ 
+                                <Box sx={{
                                     mt: 3,
-                                    p: 3, 
-                                    borderRadius: 2, 
+                                    p: 3,
+                                    borderRadius: 2,
                                     backgroundColor: 'rgba(0, 0, 0, 0.2)',
                                     border: '1px solid rgba(0, 217, 255, 0.2)'
                                 }}>
@@ -1302,9 +1320,9 @@ const Chat = ({ user, onUserUpdate }) => {
                                         Your Fingerprint (safe to publicize)
                                     </Typography>
                                     <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                        <KeyFingerprint 
-                                            publicKey={myPublicKeyJwk} 
-                                            size={100} 
+                                        <KeyFingerprint
+                                            publicKey={myPublicKeyJwk}
+                                            size={100}
                                             showHex={true}
                                         />
                                     </Box>
@@ -1314,7 +1332,7 @@ const Chat = ({ user, onUserUpdate }) => {
                     )}
                 </DialogContent>
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0, 217, 255, 0.1)' }}>
-                    <Button 
+                    <Button
                         onClick={() => {
                             setShowKeyFingerprintDialog(false);
                             setViewingKeyUser(null);
