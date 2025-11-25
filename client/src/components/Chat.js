@@ -77,7 +77,7 @@ const Chat = ({ user, onUserUpdate }) => {
                 const savedPassphrase = sessionStorage.getItem("chat_e2ee_passphrase");
                 if (savedPassphrase) {
                     try {
-                        const keys = await loadKeys(savedPassphrase);
+                        const keys = await loadKeys(savedPassphrase, user.googleId);
                         setKeyPair(keys);
                         setPassphrase(savedPassphrase);
                         
@@ -98,19 +98,15 @@ const Chat = ({ user, onUserUpdate }) => {
             // If not stored, do nothing. User can set it manually via icon.
         };
         initKeys();
-    }, []);
+    }, [user.googleId]);
 
     const handlePassphraseSubmit = async () => {
         try {
-            let keys;
-            const stored = localStorage.getItem("chat_e2ee_keys");
-            if (stored) {
-                keys = await loadKeys(passphrase);
-            } else {
-                keys = await generateAndStoreKeys(passphrase);
-                setHasStoredKeys(true);
-            }
+            // With deterministic key generation, we always use the same function
+            // It will generate deterministic keys from passphrase + googleId
+            const keys = await loadKeys(passphrase, user.googleId);
             setKeyPair(keys);
+            setHasStoredKeys(true);
             setShowPassphraseDialog(false);
 
             // Store passphrase in sessionStorage for HMR survival (dev only, clears when tab closes)
@@ -122,21 +118,18 @@ const Chat = ({ user, onUserUpdate }) => {
             socket.emit('update_public_key', { publicKey: pubKeyJwk });
 
         } catch (err) {
-            if (hasStoredKeys) {
-                alert("Incorrect passphrase. If you forgot it, please reset your keys (warning: you will lose access to past encrypted messages).");
-            } else {
-                alert("Error generating keys: " + err.message);
-            }
+            alert("Error with keys: " + err.message);
             console.error(err);
         }
     };
 
     const handleClearKeys = async () => {
-        if (window.confirm("Are you sure? You will lose access to encrypted history if you don't remember the passphrase.")) {
+        if (window.confirm("Clear stored keys? You can recover them by entering the same passphrase again.")) {
             await clearKeys();
             setKeyPair(null);
             setPassphrase('');
             setHasStoredKeys(false);
+            setMyPublicKeyJwk(null);
             setShowPassphraseDialog(true);
             sessionStorage.removeItem("chat_e2ee_passphrase");
         }

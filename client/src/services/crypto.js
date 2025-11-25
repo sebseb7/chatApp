@@ -1,198 +1,228 @@
-// Web Crypto API helpers for E2EE
+// Web Crypto API + elliptic helpers for E2EE
+// Deterministic key generation from passphrase + googleId
+
+import { ec as EC } from 'elliptic';
+
+const ec = new EC('p256'); // NIST P-256 curve (same as Web Crypto ECDH P-256)
 
 // Convert string to ArrayBuffer
 const str2ab = (str) => {
-    const buf = new ArrayBuffer(str.length);
-    const bufView = new Uint8Array(buf);
-    for (let i = 0, strLen = str.length; i < strLen; i++) {
-        bufView[i] = str.charCodeAt(i);
-    }
-    return buf;
+    const encoder = new TextEncoder();
+    return encoder.encode(str);
 };
 
-// Convert ArrayBuffer to string (chunked to avoid stack overflow with large buffers)
+// Convert ArrayBuffer to string
 const ab2str = (buf) => {
-    const uint8Array = new Uint8Array(buf);
-    const chunkSize = 8192; // Process in chunks to avoid call stack overflow
-    let result = '';
-    
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-        const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-        result += String.fromCharCode.apply(null, chunk);
+    const decoder = new TextDecoder();
+    return decoder.decode(buf);
+};
+
+// Convert ArrayBuffer to hex string
+const ab2hex = (buf) => {
+    return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+// Convert hex string to ArrayBuffer
+const hex2ab = (hex) => {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
     }
-    
-    return result;
+    return bytes.buffer;
 };
 
 // Convert ArrayBuffer to Base64
 const ab2base64 = (buf) => {
-    return window.btoa(ab2str(buf));
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
 };
 
 // Convert Base64 to ArrayBuffer
 const base642ab = (base64) => {
-    return str2ab(window.atob(base64));
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
 };
 
-/**
- * Generate an ECDH key pair from a passphrase using PBKDF2.
- * Note: In a real-world scenario, using a passphrase directly for asymmetric keys is tricky 
- * because Web Crypto API doesn't support deterministic key generation from a seed for ECDH directly 
- * in a standard cross-browser way without external libraries (like elliptic).
- * 
- * HOWEVER, for this task, we need "passphrase -> keys".
- * 
- * WORKAROUND: 
- * We will use the passphrase to generate a symmetric key (AES-GCM) via PBKDF2.
- * But we need an ASYMMETRIC key pair (Public/Private) for E2EE (ECDH).
- * 
- * Since we cannot deterministically generate ECDH keys from a passphrase using ONLY Web Crypto API 
- * (importKey 'raw' is not supported for ECDH private keys), 
- * we will stick to a slightly different approach if strict "passphrase -> same key every time" is required:
- * 
- * Option A: Generate a random key pair, encrypt the private key with the passphrase, and store it in localStorage.
- * Option B: Use a library like 'elliptic' (not available here without npm install).
- * Option C: (Simplification for this environment) 
- * We will generate a random key pair and export it. 
- * The "passphrase" requirement in the prompt says "user needs to set a passphrase and publish the derived public key".
- * This implies the key is DERIVED from the passphrase.
- * 
- * Since I cannot easily do deterministic ECDH with vanilla WebCrypto, I will implement:
- * 1. PBKDF2(passphrase) -> AES Key
- * 2. Generate Random ECDH Key Pair.
- * 3. Encrypt the Private Key with the AES Key.
- * 4. Store the Encrypted Private Key in localStorage (or just memory if we want to be strict about "not stored on server").
- * 
- * WAIT. "publish the derived public key... it's not stored on the server".
- * If I reload the page, I need to regenerate the SAME keys from the passphrase to read old messages?
- * Or do I just need to be able to decrypt NEW messages?
- * "current message table... should only hold messages that are undelivered".
- * If I am offline, I get messages encrypted with my public key.
- * When I come back, I enter my passphrase. If the keys are different, I can't decrypt!
- * So the keys MUST be deterministic OR stored persistently.
- * 
- * Given the constraints (no external libs), I will try to use the "Encrypt Private Key with Passphrase" approach.
- * I will store the 'encryptedPrivateKey' and 'publicKey' in localStorage.
- * When the user enters the passphrase, I try to decrypt the private key.
- * If no key exists, I generate a new one and encrypt it.
- */
-
-const SALT = str2ab("somesalt"); // In prod, use random salt and store it.
+const SALT_PREFIX = "chatapp-e2ee-v1-";
 const ITERATIONS = 100000;
 
-async function getKeyFromPassphrase(passphrase) {
+/**
+ * Derive a deterministic seed from passphrase + googleId using PBKDF2
+ */
+async function deriveSeed(passphrase, googleId) {
+    const salt = str2ab(SALT_PREFIX + googleId);
+    
     const keyMaterial = await window.crypto.subtle.importKey(
         "raw",
         str2ab(passphrase),
         { name: "PBKDF2" },
         false,
-        ["deriveKey"]
+        ["deriveBits"]
     );
-    return window.crypto.subtle.deriveKey(
+    
+    // Derive 256 bits (32 bytes) for use as private key seed
+    const bits = await window.crypto.subtle.deriveBits(
         {
             name: "PBKDF2",
-            salt: SALT,
+            salt: salt,
             iterations: ITERATIONS,
             hash: "SHA-256"
         },
         keyMaterial,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt", "decrypt"]
+        256
     );
+    
+    return new Uint8Array(bits);
 }
 
-export async function generateAndStoreKeys(passphrase) {
-    // 1. Generate ECDH Key Pair
-    const keyPair = await window.crypto.subtle.generateKey(
-        {
-            name: "ECDH",
-            namedCurve: "P-256"
-        },
+/**
+ * Generate deterministic ECDH key pair from passphrase + googleId
+ */
+export async function generateAndStoreKeys(passphrase, googleId) {
+    if (!googleId) {
+        throw new Error("googleId is required for deterministic key generation");
+    }
+    
+    // 1. Derive deterministic seed
+    const seed = await deriveSeed(passphrase, googleId);
+    
+    // 2. Generate key pair from seed using elliptic
+    const keyPair = ec.keyFromPrivate(seed);
+    
+    // 3. Export keys to a format we can store and use
+    const privateKeyHex = keyPair.getPrivate('hex');
+    const publicKeyHex = keyPair.getPublic('hex');
+    
+    // 4. Store in localStorage (we store the googleId to verify on load)
+    const storageData = {
+        privateKey: privateKeyHex,
+        publicKey: publicKeyHex,
+        googleId: googleId
+    };
+    localStorage.setItem("chat_e2ee_keys", JSON.stringify(storageData));
+    
+    // 5. Import into Web Crypto for encryption/decryption operations
+    const webCryptoKeys = await importEllipticKeysToWebCrypto(privateKeyHex, publicKeyHex);
+    
+    return webCryptoKeys;
+}
+
+/**
+ * Load keys - with deterministic generation, we can regenerate from passphrase + googleId
+ */
+export async function loadKeys(passphrase, googleId) {
+    const stored = localStorage.getItem("chat_e2ee_keys");
+    
+    if (!stored) {
+        // No stored keys - generate new ones
+        return await generateAndStoreKeys(passphrase, googleId);
+    }
+    
+    const { googleId: storedGoogleId } = JSON.parse(stored);
+    
+    // Verify googleId matches
+    if (storedGoogleId !== googleId) {
+        throw new Error("Stored keys belong to a different user");
+    }
+    
+    // Regenerate keys deterministically (this verifies the passphrase)
+    const seed = await deriveSeed(passphrase, googleId);
+    const keyPair = ec.keyFromPrivate(seed);
+    const regeneratedPublicHex = keyPair.getPublic('hex');
+    
+    // Verify regenerated keys match stored keys
+    const { publicKey: storedPublicKey } = JSON.parse(stored);
+    if (regeneratedPublicHex !== storedPublicKey) {
+        throw new Error("Invalid passphrase - keys do not match");
+    }
+    
+    // Import into Web Crypto
+    const privateKeyHex = keyPair.getPrivate('hex');
+    return await importEllipticKeysToWebCrypto(privateKeyHex, regeneratedPublicHex);
+}
+
+/**
+ * Convert elliptic keys to Web Crypto keys for encryption/decryption
+ */
+async function importEllipticKeysToWebCrypto(privateKeyHex, publicKeyHex) {
+    // For P-256, the public key in uncompressed form is 65 bytes: 04 || x || y
+    // elliptic gives us this format already
+    const publicKeyBytes = new Uint8Array(hex2ab(publicKeyHex));
+    
+    // Extract x and y coordinates (skip the 0x04 prefix)
+    const x = publicKeyBytes.slice(1, 33);
+    const y = publicKeyBytes.slice(33, 65);
+    
+    // Private key is 32 bytes
+    const privateKeyBytes = new Uint8Array(hex2ab(privateKeyHex.padStart(64, '0')));
+    
+    // Create JWK format for import
+    const publicJwk = {
+        kty: "EC",
+        crv: "P-256",
+        x: arrayBufferToBase64Url(x),
+        y: arrayBufferToBase64Url(y),
+    };
+    
+    const privateJwk = {
+        ...publicJwk,
+        d: arrayBufferToBase64Url(privateKeyBytes),
+    };
+    
+    // Import as Web Crypto keys
+    const publicKey = await window.crypto.subtle.importKey(
+        "jwk",
+        publicJwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        []
+    );
+    
+    const privateKey = await window.crypto.subtle.importKey(
+        "jwk",
+        privateJwk,
+        { name: "ECDH", namedCurve: "P-256" },
         true,
         ["deriveKey"]
     );
-
-    // 2. Export keys
-    const publicKeyJwk = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
-    const privateKeyJwk = await window.crypto.subtle.exportKey("jwk", keyPair.privateKey);
-
-    // 3. Encrypt Private Key with Passphrase
-    const aesKey = await getKeyFromPassphrase(passphrase);
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const encryptedPrivateKey = await window.crypto.subtle.encrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        aesKey,
-        str2ab(JSON.stringify(privateKeyJwk))
-    );
-
-    // 4. Store in localStorage
-    const storageData = {
-        publicKey: publicKeyJwk,
-        encryptedPrivateKey: ab2base64(encryptedPrivateKey),
-        iv: ab2base64(iv)
-    };
-    localStorage.setItem("chat_e2ee_keys", JSON.stringify(storageData));
-
-    return {
-        publicKey: keyPair.publicKey,
-        privateKey: keyPair.privateKey
-    };
+    
+    return { publicKey, privateKey };
 }
 
-export async function loadKeys(passphrase) {
-    const stored = localStorage.getItem("chat_e2ee_keys");
-    if (!stored) return null;
-
-    try {
-        const { publicKey, encryptedPrivateKey, iv } = JSON.parse(stored);
-
-        // 1. Import Public Key
-        const pubKey = await window.crypto.subtle.importKey(
-            "jwk",
-            publicKey,
-            {
-                name: "ECDH",
-                namedCurve: "P-256"
-            },
-            true,
-            []
-        );
-
-        // 2. Decrypt Private Key
-        const aesKey = await getKeyFromPassphrase(passphrase);
-        const decryptedBytes = await window.crypto.subtle.decrypt(
-            {
-                name: "AES-GCM",
-                iv: base642ab(iv)
-            },
-            aesKey,
-            base642ab(encryptedPrivateKey)
-        );
-
-        const privateKeyJwk = JSON.parse(ab2str(decryptedBytes));
-        const privKey = await window.crypto.subtle.importKey(
-            "jwk",
-            privateKeyJwk,
-            {
-                name: "ECDH",
-                namedCurve: "P-256"
-            },
-            true,
-            ["deriveKey"]
-        );
-
-        return {
-            publicKey: pubKey,
-            privateKey: privKey
-        };
-    } catch (e) {
-        console.error("Failed to load keys (wrong passphrase?)", e);
-        throw new Error("Invalid passphrase or corrupted keys");
+// Base64URL encoding (no padding, URL-safe)
+function arrayBufferToBase64Url(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
     }
+    return window.btoa(binary)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
+
+function base64UrlToArrayBuffer(base64url) {
+    const base64 = base64url
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+    const binary = window.atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
 }
 
 export async function clearKeys() {
