@@ -496,21 +496,31 @@ module.exports = function (io, db) {
                 const adminIds = new Set(users.filter(u => u.isAdmin).map(u => u.id));
 
                 // For each online user, calculate who they can see
-                const onlineUserIds = Array.from(onlineUsers.keys());
-
                 for (const [userId, socketId] of onlineUsers) {
                     const visibleUsers = [];
                     const isViewerAdmin = adminIds.has(userId);
 
-                    // Get private groups for this user
-                    // We only care about private groups for the "invisible" visibility check
-                    const myPrivateGroups = await db.all(`
-                        SELECT gm.groupId 
-                        FROM group_members gm
-                        JOIN groups g ON gm.groupId = g.id
-                        WHERE gm.userId = ? AND g.isPublic = 0
-                    `, userId);
-                    const myPrivateGroupIds = myPrivateGroups.map(g => g.groupId);
+                    // Optimization: Pre-fetch users who share a private group with the viewer
+                    let sharedPrivateGroupUserIds = new Set();
+                    if (!isViewerAdmin) {
+                        const myPrivateGroups = await db.all(`
+                            SELECT gm.groupId 
+                            FROM group_members gm
+                            JOIN groups g ON gm.groupId = g.id
+                            WHERE gm.userId = ? AND g.isPublic = 0
+                        `, userId);
+
+                        const myPrivateGroupIds = myPrivateGroups.map(g => g.groupId);
+
+                        if (myPrivateGroupIds.length > 0) {
+                            const sharedMembers = await db.all(`
+                                SELECT userId 
+                                FROM group_members 
+                                WHERE groupId IN (${myPrivateGroupIds.join(',')})
+                            `);
+                            sharedMembers.forEach(m => sharedPrivateGroupUserIds.add(m.userId));
+                        }
+                    }
 
                     for (const otherUser of users) {
                         if (otherUser.id === userId) {
@@ -519,37 +529,24 @@ module.exports = function (io, db) {
                         }
 
                         const isOtherOnline = onlineUsers.has(otherUser.id);
-                        if (!isOtherOnline) {
-                            visibleUsers.push({ ...otherUser, status: 'offline' });
-                            continue;
-                        }
+                        let status = isOtherOnline ? 'online' : 'offline';
 
-                        // Other user is online. Are they invisible?
                         if (otherUser.isInvisible) {
                             if (isViewerAdmin) {
-                                // Admins see invisible users as "invisible" (online but hidden)
-                                visibleUsers.push({ ...otherUser, status: 'invisible' });
+                                // Admins see invisible users
+                                // If online, show as 'invisible' so admin knows
+                                if (isOtherOnline) status = 'invisible';
+                                visibleUsers.push({ ...otherUser, status });
+                            } else if (sharedPrivateGroupUserIds.has(otherUser.id)) {
+                                // Shares a private group -> Privacy lifted
+                                visibleUsers.push({ ...otherUser, status });
                             } else {
-                                // Check if we share a PRIVATE group
-                                if (myPrivateGroupIds.length > 0) {
-                                    const sharedPrivateGroup = await db.get(`
-                                        SELECT 1 
-                                        FROM group_members 
-                                        WHERE userId = ? AND groupId IN (${myPrivateGroupIds.join(',')})
-                                    `, otherUser.id);
-
-                                    if (sharedPrivateGroup) {
-                                        visibleUsers.push({ ...otherUser, status: 'online' });
-                                    } else {
-                                        visibleUsers.push({ ...otherUser, status: 'offline' });
-                                    }
-                                } else {
-                                    visibleUsers.push({ ...otherUser, status: 'offline' });
-                                }
+                                // Invisible and no shared private group -> Completely hidden
+                                continue;
                             }
                         } else {
-                            // Visible and online
-                            visibleUsers.push({ ...otherUser, status: 'online' });
+                            // Normal visible user
+                            visibleUsers.push({ ...otherUser, status });
                         }
                     }
 
