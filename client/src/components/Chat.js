@@ -15,13 +15,15 @@ import MarkdownIcon from '@mui/icons-material/Code';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LockIcon from '@mui/icons-material/Lock';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import SettingsIcon from '@mui/icons-material/Settings';
 import ReactMarkdown from 'react-markdown';
 import { useSocket } from '../context/SocketContext';
 import { generateAndStoreKeys, loadKeys, exportPublicKey, importPublicKey, encryptMessage, decryptMessage, clearKeys } from '../services/crypto';
+import ProfileSettings from './ProfileSettings';
 
 const drawerWidth = 300;
 
-const Chat = ({ user }) => {
+const Chat = ({ user, onUserUpdate }) => {
     const { socket, isConnected } = useSocket();
     const [users, setUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
@@ -37,6 +39,7 @@ const Chat = ({ user }) => {
     const [newGroupIsPublic, setNewGroupIsPublic] = useState(false);
     const [showGroupDialog, setShowGroupDialog] = useState(false);
     const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
+    const [showProfileDialog, setShowProfileDialog] = useState(false);
     const [unreadCounts, setUnreadCounts] = useState({});
     const [readReceipts, setReadReceipts] = useState({}); // { messageId: [user1, user2...] }
     const [deliveryStatus, setDeliveryStatus] = useState({}); // { messageId: 'delivered' | 'queued' }
@@ -507,10 +510,26 @@ const Chat = ({ user }) => {
                 }}
             >
                 <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 217, 255, 0.2)', background: 'rgba(15, 76, 92, 0.3)' }}>
-                    <Typography variant="h6">Users</Typography>
-                    <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Typography variant="caption">{currentUser.name} ({currentUser.isInvisible ? 'Invisible' : 'Visible'})</Typography>
+                    <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                        <Box display="flex" alignItems="center" gap={1}>
+                            <Avatar 
+                                src={currentUser.avatar} 
+                                sx={{ width: 32, height: 32, cursor: 'pointer' }}
+                                onClick={() => setShowProfileDialog(true)}
+                            />
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ lineHeight: 1.2 }}>{currentUser.name}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {currentUser.isInvisible ? 'Invisible' : 'Visible'}
+                                </Typography>
+                            </Box>
+                        </Box>
                         <Box>
+                            <Tooltip title="Profile Settings">
+                                <IconButton size="small" onClick={() => setShowProfileDialog(true)}>
+                                    <SettingsIcon />
+                                </IconButton>
+                            </Tooltip>
                             <Tooltip title="Set Passphrase for E2EE">
                                 <IconButton size="small" onClick={() => setShowPassphraseDialog(true)}>
                                     <VpnKeyIcon color={keyPair ? "primary" : "disabled"} />
@@ -919,6 +938,23 @@ const Chat = ({ user }) => {
                     <Button onClick={() => setShowAddMemberDialog(false)}>Cancel</Button>
                 </Paper>
             )}
+
+            {/* Profile Settings Dialog */}
+            <ProfileSettings
+                open={showProfileDialog}
+                onClose={() => setShowProfileDialog(false)}
+                user={currentUser}
+                onSave={(updatedUser) => {
+                    // Update local user state via parent
+                    if (onUserUpdate) {
+                        onUserUpdate(updatedUser);
+                    }
+                    // Trigger refresh of user list via socket
+                    if (socket) {
+                        socket.emit('refresh_user_list');
+                    }
+                }}
+            />
 
             <Snackbar
                 open={!isConnected}

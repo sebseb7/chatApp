@@ -1,11 +1,46 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const passport = require('passport');
 const cookieSession = require('cookie-session');
+const multer = require('multer');
 const dotenv = require('dotenv');
 const { initDB } = require('./db');
 const configureAuth = require('./auth');
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for avatar uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadsDir);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        cb(null, `${req.user.id}-${Date.now()}${ext}`);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mime = allowedTypes.test(file.mimetype);
+        if (ext && mime) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed'));
+        }
+    }
+});
 
 dotenv.config();
 
@@ -48,6 +83,12 @@ initDB().then(db => {
     app.use(passport.initialize());
     app.use(passport.session());
 
+    // JSON body parser
+    app.use(express.json());
+
+    // Serve uploaded files
+    app.use('/uploads', express.static(uploadsDir));
+
     configureAuth(passport, db);
 
     app.get('/auth/google',
@@ -70,6 +111,74 @@ initDB().then(db => {
             if (err) { return next(err); }
             res.redirect('/');
         });
+    });
+
+    // Profile update endpoint
+    app.post('/api/profile', upload.single('avatar'), async (req, res) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+
+        try {
+            const { customName, resetToGoogle } = req.body;
+            const userId = req.user.id;
+
+            if (resetToGoogle === 'true' || resetToGoogle === true) {
+                // Delete old custom avatar file if exists
+                const user = await db.get('SELECT customAvatar FROM users WHERE id = ?', userId);
+                if (user && user.customAvatar) {
+                    const oldAvatarPath = path.join(uploadsDir, path.basename(user.customAvatar));
+                    if (fs.existsSync(oldAvatarPath)) {
+                        fs.unlinkSync(oldAvatarPath);
+                    }
+                }
+
+                // Reset to Google profile
+                await db.run(
+                    'UPDATE users SET customName = NULL, customAvatar = NULL WHERE id = ?',
+                    userId
+                );
+            } else {
+                // Update custom name if provided
+                if (customName !== undefined) {
+                    await db.run(
+                        'UPDATE users SET customName = ? WHERE id = ?',
+                        customName || null,
+                        userId
+                    );
+                }
+
+                // Update avatar if file was uploaded
+                if (req.file) {
+                    // Delete old custom avatar if exists
+                    const user = await db.get('SELECT customAvatar FROM users WHERE id = ?', userId);
+                    if (user && user.customAvatar) {
+                        const oldAvatarPath = path.join(uploadsDir, path.basename(user.customAvatar));
+                        if (fs.existsSync(oldAvatarPath)) {
+                            fs.unlinkSync(oldAvatarPath);
+                        }
+                    }
+
+                    const avatarPath = `/uploads/${req.file.filename}`;
+                    await db.run(
+                        'UPDATE users SET customAvatar = ? WHERE id = ?',
+                        avatarPath,
+                        userId
+                    );
+                }
+            }
+
+            // Fetch updated user
+            const updatedUser = await db.get('SELECT * FROM users WHERE id = ?', userId);
+
+            // Notify connected clients about profile update
+            io.emit('profile_updated', { userId });
+
+            res.json(updatedUser);
+        } catch (err) {
+            console.error('Error updating profile:', err);
+            res.status(500).json({ error: 'Failed to update profile' });
+        }
     });
 
     const configureSocket = require('./socket');

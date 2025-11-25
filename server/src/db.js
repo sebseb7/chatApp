@@ -14,8 +14,10 @@ async function initDB() {
       email TEXT,
       name TEXT,
       avatar TEXT,
+      customName TEXT,
+      customAvatar TEXT,
       isAdmin INTEGER DEFAULT 0,
-      isInvisible INTEGER DEFAULT 0
+      isInvisible INTEGER DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -64,6 +66,15 @@ async function initDB() {
 
   try {
     await db.exec('ALTER TABLE group_members ADD COLUMN isMuted INTEGER DEFAULT 0');
+  } catch (e) { /* Column likely exists */ }
+
+  // Migration for custom profile fields
+  try {
+    await db.exec('ALTER TABLE users ADD COLUMN customName TEXT');
+  } catch (e) { /* Column likely exists */ }
+
+  try {
+    await db.exec('ALTER TABLE users ADD COLUMN customAvatar TEXT');
   } catch (e) { /* Column likely exists */ }
 
   return db;

@@ -28,14 +28,13 @@ module.exports = function (io, db) {
                     // Send group list to the user who just joined
                     await broadcastGroupList(userId);
 
-                    console.log(`User ${user.name} (${userId}) joined.`);
-
-                    // Fetch missed messages (Only Private Messages now)
-                    // Logic: Find messages where I am the receiver AND messageId NOT IN message_deliveries
-                    // Actually, we DELETE delivered messages now. So just fetch ALL messages for me.
+                    const displayName = user.customName || user.name;
+                    console.log(`User ${displayName} (${userId}) joined.`);
 
                     const missedDMs = await db.all(`
-                        SELECT m.*, u.name as senderName, u.avatar as senderAvatar
+                        SELECT m.*, 
+                               COALESCE(u.customName, u.name) as senderName, 
+                               COALESCE(u.customAvatar, u.avatar) as senderAvatar
                         FROM messages m
                         JOIN users u ON m.senderId = u.id
                         WHERE m.receiverId = ? 
@@ -75,6 +74,11 @@ module.exports = function (io, db) {
                 onlineUsers.set(socket.userId, userData);
                 await broadcastUserList();
             }
+        });
+
+        // Handle profile updates - refresh user list for all connected users
+        socket.on('refresh_user_list', async () => {
+            await broadcastUserList();
         });
 
         socket.on('delete_group', async ({ groupId }) => {
@@ -119,7 +123,7 @@ module.exports = function (io, db) {
             }
         });
 
-        socket.on('send_message', async ({ receiverId, groupId, content, type = 'text', senderPublicKey }) => {
+        socket.on('send_message', async ({ receiverId, groupId, content, type = 'text', senderPublicKey, tempId }) => {
             if (!socket.userId) return;
             try {
                 if (groupId) {
@@ -143,21 +147,24 @@ module.exports = function (io, db) {
                     }
                 }
 
-                const sender = await db.get('SELECT name, avatar FROM users WHERE id = ?', socket.userId);
+                const sender = await db.get('SELECT name, avatar, customName, customAvatar FROM users WHERE id = ?', socket.userId);
+                const senderName = sender ? (sender.customName || sender.name) : 'Unknown';
+                const senderAvatar = sender ? (sender.customAvatar || sender.avatar) : null;
 
                 // Construct message object
                 // Note: We do NOT insert into DB yet.
                 const message = {
                     id: Date.now(), // Temporary ID for ephemeral/RAM
                     senderId: socket.userId,
-                    senderName: sender ? sender.name : 'Unknown',
-                    senderAvatar: sender ? sender.avatar : null,
+                    senderName,
+                    senderAvatar,
                     receiverId,
                     groupId,
                     content,
                     type,
                     timestamp: new Date().toISOString(),
-                    senderPublicKey // Pass through the key
+                    senderPublicKey, // Pass through the key
+                    tempId // Pass through tempId for deduplication
                 };
 
                 if (groupId) {
@@ -225,7 +232,8 @@ module.exports = function (io, db) {
         socket.on('create_group', async ({ name, isPublic }) => {
             if (!socket.userId) return;
             try {
-                const user = await db.get('SELECT isAdmin, name FROM users WHERE id = ?', socket.userId);
+                const userRaw = await db.get('SELECT isAdmin, name, customName FROM users WHERE id = ?', socket.userId);
+                const user = userRaw ? { ...userRaw, name: userRaw.customName || userRaw.name } : null;
 
                 if (isPublic && (!user || !user.isAdmin)) {
                     socket.emit('error', 'Only admins can create public groups');
@@ -263,7 +271,8 @@ module.exports = function (io, db) {
         socket.on('add_to_group', async ({ groupId, userId }) => {
             if (!socket.userId) return;
             try {
-                const admin = await db.get('SELECT isAdmin, name FROM users WHERE id = ?', socket.userId);
+                const adminRaw = await db.get('SELECT isAdmin, name, customName FROM users WHERE id = ?', socket.userId);
+                const admin = adminRaw ? { ...adminRaw, name: adminRaw.customName || adminRaw.name } : null;
                 const isMember = await db.get('SELECT * FROM group_members WHERE groupId = ? AND userId = ?', groupId, socket.userId);
 
                 if ((!admin || !admin.isAdmin) && !isMember) {
@@ -271,7 +280,8 @@ module.exports = function (io, db) {
                     return;
                 }
 
-                const targetUser = await db.get('SELECT isInvisible, name FROM users WHERE id = ?', userId);
+                const targetUserRaw = await db.get('SELECT isInvisible, name, customName FROM users WHERE id = ?', userId);
+                const targetUser = targetUserRaw ? { ...targetUserRaw, name: targetUserRaw.customName || targetUserRaw.name } : null;
                 if (targetUser && targetUser.isInvisible === 1) {
                     if (!admin || !admin.isAdmin) {
                         socket.emit('error', 'Only admins can add invisible users to groups');
@@ -295,8 +305,9 @@ module.exports = function (io, db) {
 
                 await broadcastGroupList(socket.userId);
 
-                const addedUser = await db.get('SELECT name FROM users WHERE id = ?', userId);
-                const systemMsg = `${admin.name} added ${addedUser.name}`;
+                const addedUserRaw = await db.get('SELECT name, customName FROM users WHERE id = ?', userId);
+                const addedUserName = addedUserRaw.customName || addedUserRaw.name;
+                const systemMsg = `${admin.name} added ${addedUserName}`;
                 await sendSystemMessage(groupId, systemMsg);
 
                 await broadcastGroupMembers(groupId);
@@ -309,7 +320,8 @@ module.exports = function (io, db) {
         socket.on('toggle_mute', async ({ groupId, userId }) => {
             if (!socket.userId) return;
             try {
-                const admin = await db.get('SELECT isAdmin, name FROM users WHERE id = ?', socket.userId);
+                const adminRaw = await db.get('SELECT isAdmin, name, customName FROM users WHERE id = ?', socket.userId);
+                const admin = adminRaw ? { ...adminRaw, name: adminRaw.customName || adminRaw.name } : null;
                 if (!admin || !admin.isAdmin) {
                     socket.emit('error', 'Only admins can mute/unmute');
                     return;
@@ -330,11 +342,12 @@ module.exports = function (io, db) {
                     await db.run('UPDATE group_members SET isMuted = ? WHERE groupId = ? AND userId = ?', newMuted, groupId, userId);
                 }
 
-                const targetUser = await db.get('SELECT name FROM users WHERE id = ?', userId);
+                const targetUserRaw = await db.get('SELECT name, customName FROM users WHERE id = ?', userId);
+                const targetUserName = targetUserRaw.customName || targetUserRaw.name;
                 const updatedMember = await db.get('SELECT isMuted FROM group_members WHERE groupId = ? AND userId = ?', groupId, userId);
                 const action = updatedMember.isMuted ? 'muted' : 'unmuted';
 
-                const systemMsg = `${admin.name} ${action} ${targetUser.name}`;
+                const systemMsg = `${admin.name} ${action} ${targetUserName}`;
                 await sendSystemMessage(groupId, systemMsg);
 
                 await broadcastGroupMembers(groupId);
@@ -347,7 +360,8 @@ module.exports = function (io, db) {
         socket.on('remove_from_group', async ({ groupId, userId }) => {
             if (!socket.userId) return;
             try {
-                const admin = await db.get('SELECT isAdmin, name FROM users WHERE id = ?', socket.userId);
+                const adminRaw = await db.get('SELECT isAdmin, name, customName FROM users WHERE id = ?', socket.userId);
+                const admin = adminRaw ? { ...adminRaw, name: adminRaw.customName || adminRaw.name } : null;
                 if (!admin || !admin.isAdmin) {
                     socket.emit('error', 'Only admins can remove from groups');
                     return;
@@ -357,8 +371,9 @@ module.exports = function (io, db) {
 
                 await broadcastGroupList(userId);
 
-                const removedUser = await db.get('SELECT name FROM users WHERE id = ?', userId);
-                const systemMsg = `${admin.name} removed ${removedUser.name}`;
+                const removedUserRaw = await db.get('SELECT name, customName FROM users WHERE id = ?', userId);
+                const removedUserName = removedUserRaw.customName || removedUserRaw.name;
+                const systemMsg = `${admin.name} removed ${removedUserName}`;
                 await sendSystemMessage(groupId, systemMsg);
 
                 await broadcastGroupMembers(groupId);
@@ -383,7 +398,10 @@ module.exports = function (io, db) {
 
             if (isMember || (isAdmin && isAdmin.isAdmin) || (group && group.isPublic)) {
                 const query = `
-                    SELECT u.id, u.name, u.avatar, gm.isMuted 
+                    SELECT u.id, 
+                           COALESCE(u.customName, u.name) as name, 
+                           COALESCE(u.customAvatar, u.avatar) as avatar, 
+                           gm.isMuted 
                     FROM users u 
                     JOIN group_members gm ON u.id = gm.userId 
                     WHERE gm.groupId = ?
@@ -431,7 +449,10 @@ module.exports = function (io, db) {
             const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
             const members = await db.all(`
-                SELECT u.id, u.name, u.avatar, gm.isMuted 
+                SELECT u.id, 
+                       COALESCE(u.customName, u.name) as name, 
+                       COALESCE(u.customAvatar, u.avatar) as avatar, 
+                       gm.isMuted 
                 FROM users u 
                 JOIN group_members gm ON u.id = gm.userId 
                 WHERE gm.groupId = ?
@@ -470,8 +491,9 @@ module.exports = function (io, db) {
 
                 await broadcastGroupList(socket.userId);
 
-                const user = await db.get('SELECT name FROM users WHERE id = ?', socket.userId);
-                const systemMsg = `${user.name} left the group`;
+                const userRaw = await db.get('SELECT name, customName FROM users WHERE id = ?', socket.userId);
+                const userName = userRaw.customName || userRaw.name;
+                const systemMsg = `${userName} left the group`;
                 await sendSystemMessage(groupId, systemMsg);
 
                 await broadcastGroupMembers(groupId);
@@ -491,7 +513,13 @@ module.exports = function (io, db) {
             try {
                 // We don't store read receipts anymore. Just broadcast.
 
-                const reader = await db.get('SELECT id, name, avatar, isInvisible FROM users WHERE id = ?', socket.userId);
+                const readerRaw = await db.get('SELECT id, name, avatar, customName, customAvatar, isInvisible FROM users WHERE id = ?', socket.userId);
+                const reader = {
+                    id: readerRaw.id,
+                    name: readerRaw.customName || readerRaw.name,
+                    avatar: readerRaw.customAvatar || readerRaw.avatar,
+                    isInvisible: readerRaw.isInvisible
+                };
 
                 let shouldBroadcast = true;
 
@@ -564,7 +592,7 @@ module.exports = function (io, db) {
 
         async function broadcastUserList() {
             try {
-                const users = await db.all('SELECT id, name, avatar, isInvisible, isAdmin FROM users');
+                const users = await db.all('SELECT id, name, avatar, customName, customAvatar, isInvisible, isAdmin FROM users');
                 const adminIds = new Set(users.filter(u => u.isAdmin).map(u => u.id));
 
                 for (const [userId, userData] of onlineUsers) {
@@ -597,7 +625,20 @@ module.exports = function (io, db) {
                         const otherUserData = onlineUsers.get(otherUser.id);
                         const publicKey = otherUserData ? otherUserData.publicKey : null;
 
-                        const userWithKey = { ...otherUser, publicKey };
+                        // Use custom name/avatar if set, otherwise use Google data
+                        const effectiveName = otherUser.customName || otherUser.name;
+                        const effectiveAvatar = otherUser.customAvatar || otherUser.avatar;
+                        
+                        // Include both effective and Google data so client can show reset option
+                        const userWithKey = {
+                            ...otherUser,
+                            name: effectiveName,
+                            avatar: effectiveAvatar,
+                            googleName: otherUser.name,
+                            googleAvatar: otherUser.avatar,
+                            hasCustomProfile: !!(otherUser.customName || otherUser.customAvatar),
+                            publicKey
+                        };
 
                         if (otherUser.id === userId) {
                             visibleUsers.push({ ...userWithKey, status: 'online' });

@@ -144,7 +144,10 @@ const App = () => {
                     <Route path="/" element={
                         user ? (
                             <SocketProvider user={user}>
-                                <Chat user={user} />
+                                <Chat 
+                                    user={user} 
+                                    onUserUpdate={(updatedUser) => setUser(updatedUser)}
+                                />
                             </SocketProvider>
                         ) : (
                             <Login />

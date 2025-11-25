@@ -26,7 +26,7 @@ module.exports = function (passport, db) {
                 let user = await db.get('SELECT * FROM users WHERE googleId = ?', profile.id);
                 if (!user) {
                     const result = await db.run(
-                        'INSERT INTO users (googleId, email, name, avatar) VALUES (?, ?, ?, ?)',
+                        'INSERT INTO users (googleId, email, name, avatar, isInvisible) VALUES (?, ?, ?, ?, 1)',
                         profile.id,
                         profile.emails[0].value,
                         profile.displayName,
