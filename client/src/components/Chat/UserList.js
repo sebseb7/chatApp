@@ -77,12 +77,12 @@ class UserList extends Component {
                         </Box>
                         <Box>
                             <Tooltip title="Profile Settings">
-                                <IconButton size="small" onClick={() => setShowProfileDialog(true)}>
+                                <IconButton size="small" onClick={(e) => { e.currentTarget.blur(); setShowProfileDialog(true); }}>
                                     <SettingsIcon />
                                 </IconButton>
                             </Tooltip>
                             <Tooltip title={keyPair ? "E2EE Settings" : "Set Passphrase for E2EE"}>
-                                <IconButton size="small" onClick={() => setShowPassphraseDialog(true)}>
+                                <IconButton size="small" onClick={(e) => { e.currentTarget.blur(); setShowPassphraseDialog(true); }}>
                                     <VpnKeyIcon color={keyPair ? "primary" : "disabled"} />
                                 </IconButton>
                             </Tooltip>
@@ -183,22 +183,24 @@ class UserList extends Component {
                                     <Box component="span" display="flex" alignItems="center">
                                         {u.status}
                                         {u.publicKey && (
-                                            <Tooltip title="View key fingerprint">
-                                                <LockIcon 
-                                                    fontSize="inherit" 
+                                            <Tooltip title="View key fingerprint" disableInteractive>
+                                                <IconButton
+                                                    size="small"
                                                     sx={{ 
                                                         ml: 0.5, 
-                                                        fontSize: 12, 
+                                                        p: 0,
                                                         color: 'primary.main',
-                                                        cursor: 'pointer',
-                                                        '&:hover': { color: 'secondary.main' }
+                                                        '&:hover': { color: 'secondary.main', backgroundColor: 'transparent' }
                                                     }}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        e.currentTarget.blur();
                                                         setViewingKeyUser(u);
                                                         setShowKeyFingerprintDialog(true);
                                                     }}
-                                                />
+                                                >
+                                                    <LockIcon sx={{ fontSize: 12 }} />
+                                                </IconButton>
                                             </Tooltip>
                                         )}
                                     </Box>

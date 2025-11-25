@@ -28,6 +28,7 @@ class KeyFingerprintDialog extends Component {
                 open={showKeyFingerprintDialog && !!viewingKeyUser}
                 onClose={this.handleClose}
                 maxWidth="sm"
+                disableRestoreFocus
                 PaperProps={{
                     sx: {
                         background: 'linear-gradient(135deg, #1a3540 0%, #152428 100%)',

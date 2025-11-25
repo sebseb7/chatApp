@@ -736,22 +736,24 @@ const Chat = ({ user, onUserUpdate }) => {
                                     <Box component="span" display="flex" alignItems="center">
                                         {u.status}
                                         {u.publicKey && (
-                                            <Tooltip title="View key fingerprint">
-                                                <LockIcon 
-                                                    fontSize="inherit" 
+                                            <Tooltip title="View key fingerprint" disableInteractive>
+                                                <IconButton
+                                                    size="small"
                                                     sx={{ 
                                                         ml: 0.5, 
-                                                        fontSize: 12, 
+                                                        p: 0,
                                                         color: 'primary.main',
-                                                        cursor: 'pointer',
-                                                        '&:hover': { color: 'secondary.main' }
+                                                        '&:hover': { color: 'secondary.main', backgroundColor: 'transparent' }
                                                     }}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        e.currentTarget.blur();
                                                         setViewingKeyUser(u);
                                                         setShowKeyFingerprintDialog(true);
                                                     }}
-                                                />
+                                                >
+                                                    <LockIcon sx={{ fontSize: 12 }} />
+                                                </IconButton>
                                             </Tooltip>
                                         )}
                                     </Box>
@@ -1035,7 +1037,7 @@ const Chat = ({ user, onUserUpdate }) => {
             </Box>
 
             {/* Passphrase Dialog */}
-            <Dialog open={showPassphraseDialog} onClose={() => setShowPassphraseDialog(false)} maxWidth="sm" fullWidth>
+            <Dialog open={showPassphraseDialog} onClose={() => setShowPassphraseDialog(false)} maxWidth="sm" fullWidth disableRestoreFocus>
                 <DialogTitle>
                     <Box display="flex" alignItems="center" gap={1}>
                         <VpnKeyIcon color="primary" />
@@ -1043,43 +1045,96 @@ const Chat = ({ user, onUserUpdate }) => {
                     </Box>
                 </DialogTitle>
                 <DialogContent>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Your passphrase deterministically generates your encryption keys.
-                        The same passphrase will always produce the same fingerprint.
-                    </Typography>
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        label="Passphrase"
-                        type="password"
-                        fullWidth
-                        variant="outlined"
-                        value={passphrase}
-                        onChange={(e) => setPassphrase(e.target.value)}
-                    />
+                    <form 
+                        onSubmit={(e) => { e.preventDefault(); if (passphrase) handlePassphraseSubmit(); }}
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-form-type="other"
+                    >
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Your passphrase deterministically generates your encryption keys.
+                            The same passphrase will always produce the same fingerprint.
+                        </Typography>
+                        <input type="text" name="username" autoComplete="username" style={{ display: 'none' }} tabIndex={-1} />
+                        <TextField
+                            autoFocus
+                            margin="dense"
+                            label="Passphrase"
+                            type="password"
+                            fullWidth
+                            variant="outlined"
+                            value={passphrase}
+                            onChange={(e) => setPassphrase(e.target.value)}
+                            autoComplete="new-password"
+                            name="encryption-key-passphrase"
+                            inputProps={{ 
+                                autoComplete: 'new-password',
+                                'data-lpignore': 'true', 
+                                'data-1p-ignore': 'true',
+                                'data-form-type': 'other'
+                            }}
+                        />
+                    </form>
                     
-                    {/* Live Fingerprint Preview */}
-                    {previewKeyJwk && (
-                        <Box sx={{ 
-                            mt: 3, 
-                            p: 2, 
-                            borderRadius: 2, 
-                            backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                            border: '1px solid rgba(0, 217, 255, 0.2)',
-                            textAlign: 'center'
-                        }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                Your Public Key Fingerprint
-                            </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                    {/* Live Fingerprint Preview - always show to prevent layout shift */}
+                    <Box sx={{ 
+                        mt: 3, 
+                        p: 2, 
+                        borderRadius: 2, 
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        border: '1px solid rgba(0, 217, 255, 0.2)',
+                        textAlign: 'center'
+                    }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                            Your Public Key Fingerprint
+                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                            {previewKeyJwk ? (
                                 <KeyFingerprint 
                                     publicKey={previewKeyJwk} 
                                     size={80} 
                                     showHex={true}
                                 />
-                            </Box>
+                            ) : (
+                                <Box sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <Box
+                                        sx={{
+                                            width: 80,
+                                            height: 80,
+                                            borderRadius: 2,
+                                            border: '2px dashed rgba(0, 217, 255, 0.3)',
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}
+                                    >
+                                        <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.5 }}>
+                                            ?
+                                        </Typography>
+                                    </Box>
+                                    <Typography 
+                                        variant="caption" 
+                                        sx={{ 
+                                            mt: 1.5, 
+                                            fontFamily: 'monospace', 
+                                            fontSize: '0.7rem',
+                                            color: 'text.secondary',
+                                            opacity: 0.5,
+                                            wordBreak: 'break-all',
+                                            textAlign: 'center',
+                                            maxWidth: 160,
+                                            padding: '4px 8px',
+                                            backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                                            borderRadius: 1
+                                        }}
+                                    >
+                                        ---- ---- ---- ---- ---- ---- ---- ----
+                                    </Typography>
+                                </Box>
+                            )}
                         </Box>
-                    )}
+                    </Box>
                 </DialogContent>
                 <DialogActions>
                     {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Reset Keys</Button>}
@@ -1157,6 +1212,7 @@ const Chat = ({ user, onUserUpdate }) => {
                 open={!!fullscreenImage}
                 onClose={() => setFullscreenImage(null)}
                 maxWidth={false}
+                disableRestoreFocus
                 PaperProps={{
                     sx: {
                         backgroundColor: 'transparent',
@@ -1183,12 +1239,13 @@ const Chat = ({ user, onUserUpdate }) => {
 
             {/* Key Fingerprint Dialog - for viewing other users' keys */}
             <Dialog
-                open={showKeyFingerprintDialog && viewingKeyUser}
+                open={showKeyFingerprintDialog && !!viewingKeyUser}
                 onClose={() => {
                     setShowKeyFingerprintDialog(false);
                     setViewingKeyUser(null);
                 }}
                 maxWidth="sm"
+                disableRestoreFocus
                 PaperProps={{
                     sx: {
                         background: 'linear-gradient(135deg, #1a3540 0%, #152428 100%)',

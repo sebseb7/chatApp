@@ -17,6 +17,7 @@ class FullscreenImageDialog extends Component {
                 open={!!fullscreenImage}
                 onClose={this.handleClose}
                 maxWidth={false}
+                disableRestoreFocus
                 PaperProps={{
                     sx: {
                         backgroundColor: 'transparent',
