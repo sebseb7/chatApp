@@ -169,9 +169,7 @@ class ProfileSettings extends Component {
                 onSave(updatedUser);
             }
 
-            setTimeout(() => {
-                onClose();
-            }, 500);
+            // Dialog stays open so user can see the result
 
         } catch (err) {
             this.setState({ 

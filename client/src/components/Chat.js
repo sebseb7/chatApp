@@ -24,6 +24,53 @@ import KeyFingerprint from './KeyFingerprint';
 
 const drawerWidth = 300;
 
+// Singleton AudioContext - created on first user gesture
+let audioContext = null;
+
+// Initialize AudioContext on user gesture (called from click handlers)
+const ensureAudioContext = () => {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    return audioContext;
+};
+
+// Play a ding notification sound using Web Audio API
+const playDingSound = () => {
+    try {
+        const ctx = ensureAudioContext();
+        if (!ctx || ctx.state !== 'running') {
+            // AudioContext not ready yet (no user gesture happened)
+            return;
+        }
+        
+        // Create oscillator for the ding tone
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        // Pleasant ding frequency (E5 note)
+        oscillator.frequency.setValueAtTime(659.25, ctx.currentTime);
+        oscillator.type = 'sine';
+        
+        // Quick fade in and out for a soft ding
+        gainNode.gain.setValueAtTime(0, ctx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.5);
+    } catch (e) {
+        // Audio not available or blocked by browser policy
+        console.warn('Could not play notification sound:', e);
+    }
+};
+
 const Chat = ({ user, onUserUpdate }) => {
     const { socket, isConnected } = useSocket();
     const [users, setUsers] = useState([]);
@@ -264,8 +311,8 @@ const Chat = ({ user, onUserUpdate }) => {
             // We use the ref because the closure might have stale selectedUser
             const currentSelected = selectedUserRef.current;
 
-            // Don't count own messages
-            if (message.senderId === user.id) return;
+            // Don't count own messages (use == to handle string/number type differences)
+            if (message.senderId == user.id) return;
 
             if (!currentSelected ||
                 (isGroupMsg && (!currentSelected.isGroup || currentSelected.id !== chatId)) ||
@@ -273,6 +320,9 @@ const Chat = ({ user, onUserUpdate }) => {
 
                 // Check if locally muted
                 if (isGroupMsg && localMutedGroups[chatId]) return;
+
+                // Play notification sound for new messages
+                playDingSound();
 
                 setUnreadCounts(prev => ({
                     ...prev,
@@ -541,7 +591,7 @@ const Chat = ({ user, onUserUpdate }) => {
     const currentUser = users.find(u => u.id === user.id) || user;
 
     return (
-        <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }} onClick={ensureAudioContext}>
             <Drawer
                 variant="permanent"
                 sx={{
@@ -1019,7 +1069,7 @@ const Chat = ({ user, onUserUpdate }) => {
                             textAlign: 'center'
                         }}>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                Your Key Fingerprint
+                                Your Public Key Fingerprint
                             </Typography>
                             <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                                 <KeyFingerprint 
@@ -1034,7 +1084,18 @@ const Chat = ({ user, onUserUpdate }) => {
                 <DialogActions>
                     {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Reset Keys</Button>}
                     <Button onClick={() => setShowPassphraseDialog(false)}>Cancel</Button>
-                    <Button onClick={handlePassphraseSubmit} disabled={!passphrase} variant="contained">
+                    <Button 
+                        onClick={handlePassphraseSubmit} 
+                        disabled={!passphrase} 
+                        variant="contained"
+                        sx={{
+                            background: 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)',
+                            color: '#ffffff',
+                            '&:hover': {
+                                background: 'linear-gradient(135deg, #1a6b7e 0%, #2a8a9e 100%)',
+                            }
+                        }}
+                    >
                         {hasStoredKeys ? "Unlock" : "Generate Keys"}
                     </Button>
                 </DialogActions>
@@ -1161,7 +1222,7 @@ const Chat = ({ user, onUserUpdate }) => {
                                 border: '1px solid rgba(0, 217, 255, 0.2)'
                             }}>
                                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
-                                    {viewingKeyUser.name}'s Key
+                                    {viewingKeyUser.name}'s Fingerprint (safe to publicize)
                                 </Typography>
                                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                                     <KeyFingerprint 
@@ -1181,7 +1242,7 @@ const Chat = ({ user, onUserUpdate }) => {
                                     border: '1px solid rgba(0, 217, 255, 0.2)'
                                 }}>
                                     <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
-                                        Your Key (for comparison)
+                                        Your Fingerprint (safe to publicize)
                                     </Typography>
                                     <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                                         <KeyFingerprint 

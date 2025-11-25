@@ -1,0 +1,141 @@
+import React, { Component, createRef } from 'react';
+import { Box, Paper, Typography, Snackbar, Alert } from '@mui/material';
+import { ChatProvider, ChatContext, ensureAudioContext } from './ChatContext';
+import { useSocket } from '../../context/SocketContext';
+import UserList from './UserList';
+import Message from './Message';
+import MessageInput from './MessageInput';
+import ChatHeader from './ChatHeader';
+import GroupDialog from './GroupDialog';
+import AddMemberDialog from './AddMemberDialog';
+import PassphraseDialog from './PassphraseDialog';
+import KeyFingerprintDialog from './KeyFingerprintDialog';
+import FullscreenImageDialog from './FullscreenImageDialog';
+import ProfileSettings from '../ProfileSettings';
+
+// Inner component that has access to ChatContext
+class ChatInner extends Component {
+    static contextType = ChatContext;
+    
+    constructor(props) {
+        super(props);
+        this.messagesEndRef = createRef();
+    }
+    
+    componentDidUpdate(prevProps, prevState) {
+        // Scroll to bottom when messages change
+        this.scrollToBottom();
+    }
+    
+    scrollToBottom = () => {
+        this.messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+    
+    render() {
+        const {
+            selectedUser,
+            showProfileDialog,
+            isConnected,
+            user,
+            socket,
+            onUserUpdate,
+            setShowProfileDialog,
+            getFilteredMessages,
+            users
+        } = this.context;
+        
+        const filteredMessages = getFilteredMessages();
+        const currentUser = users.find(u => u.id === user.id) || user;
+        
+        return (
+            <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }} onClick={ensureAudioContext}>
+                <UserList />
+                
+                <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
+                    {selectedUser ? (
+                        <>
+                            <ChatHeader />
+                            
+                            <Paper sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto' }}>
+                                {filteredMessages.map((msg, index) => (
+                                    <Message key={msg.id || index} msg={msg} />
+                                ))}
+                                <div ref={this.messagesEndRef} />
+                            </Paper>
+                            
+                            <MessageInput />
+                        </>
+                    ) : (
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                            <Typography variant="h5" color="textSecondary">
+                                Select a user or group to start chatting
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
+                
+                {/* Dialogs */}
+                <GroupDialog />
+                <AddMemberDialog />
+                <PassphraseDialog />
+                <KeyFingerprintDialog />
+                <FullscreenImageDialog />
+                
+                {/* Profile Settings Dialog */}
+                <ProfileSettings
+                    open={showProfileDialog}
+                    onClose={() => setShowProfileDialog(false)}
+                    user={currentUser}
+                    onSave={(updatedUser) => {
+                        if (onUserUpdate) {
+                            onUserUpdate(updatedUser);
+                        }
+                        if (socket) {
+                            socket.emit('refresh_user_list');
+                        }
+                    }}
+                />
+                
+                {/* Connection Status */}
+                <Snackbar
+                    open={!isConnected}
+                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                >
+                    <Alert severity="error" variant="filled" sx={{ width: '100%' }}>
+                        Disconnected from server. Trying to reconnect...
+                    </Alert>
+                </Snackbar>
+            </Box>
+        );
+    }
+}
+
+// Wrapper component to inject socket context into ChatProvider
+// This is needed because ChatProvider is a class component that can't use hooks
+class Chat extends Component {
+    render() {
+        const { user, onUserUpdate, socket, isConnected } = this.props;
+        
+        return (
+            <ChatProvider 
+                user={user} 
+                onUserUpdate={onUserUpdate}
+                socket={socket}
+                isConnected={isConnected}
+            >
+                <ChatInner />
+            </ChatProvider>
+        );
+    }
+}
+
+// HOC to inject socket hook into class component
+function withSocket(WrappedComponent) {
+    return function WithSocketWrapper(props) {
+        const { socket, isConnected } = useSocket();
+        return <WrappedComponent {...props} socket={socket} isConnected={isConnected} />;
+    };
+}
+
+export default withSocket(Chat);
+

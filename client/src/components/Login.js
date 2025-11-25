@@ -71,7 +71,7 @@ const Login = () => {
                         mb: 4,
                     }}
                 >
-                    Connect with your team in real-time
+                    Simple E2EE chat
                 </Typography>
                 <Button
                     variant="contained"
