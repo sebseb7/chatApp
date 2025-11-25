@@ -117,5 +117,5 @@ npm run toggle-admin <user_id>
 
 ## License
 
-MIT
+0BSD
 
