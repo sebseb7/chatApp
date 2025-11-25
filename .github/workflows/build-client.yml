@@ -35,7 +35,12 @@ jobs:
         run: npm run build:release
 
       - name: Display checksums
-        run: cat dist/checksums.sha256
+        run: |
+          echo "=== checksums.sha256 ==="
+          cat dist/checksums.sha256
+          echo ""
+          echo "=== checksums.json ==="
+          cat dist/checksums.json
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -47,24 +52,24 @@ jobs:
       - name: Update README with hashes
         working-directory: .
         run: |
-          # Read checksums
-          INDEX_HASH=$(grep 'index.html$' client/dist/checksums.sha256 | cut -d' ' -f1)
-          BUNDLE_HASH=$(grep 'bundle.js$' client/dist/checksums.sha256 | cut -d' ' -f1)
-          SW_HASH=$(grep 'sw.js$' client/dist/checksums.sha256 | cut -d' ' -f1)
+          # Read SRI hashes from JSON
+          INDEX_SRI=$(jq -r '.["index.html"].sri' client/dist/checksums.json)
+          BUNDLE_SRI=$(jq -r '.["bundle.js"].sri' client/dist/checksums.json)
+          SW_SRI=$(jq -r '.["sw.js"].sri' client/dist/checksums.json)
           
-          echo "index.html: $INDEX_HASH"
-          echo "bundle.js: $BUNDLE_HASH"
-          echo "sw.js: $SW_HASH"
+          echo "index.html: $INDEX_SRI"
+          echo "bundle.js: $BUNDLE_SRI"
+          echo "sw.js: $SW_SRI"
           
           # Create temporary file with new content
           cat > /tmp/new_hashes.txt << 'MARKER'
           <!-- BUILD_HASHES_START -->
-          | File | SHA-256 |
-          |------|---------|
+          | File | SRI Hash (compare with [srihash.org](https://srihash.org)) |
+          |------|-------------------------------------------------------------|
           MARKER
-          echo "| \`index.html\` | \`${INDEX_HASH}\` |" >> /tmp/new_hashes.txt
-          echo "| \`bundle.js\` | \`${BUNDLE_HASH}\` |" >> /tmp/new_hashes.txt
-          echo "| \`sw.js\` | \`${SW_HASH}\` |" >> /tmp/new_hashes.txt
+          echo "| \`index.html\` | \`${INDEX_SRI}\` |" >> /tmp/new_hashes.txt
+          echo "| \`bundle.js\` | \`${BUNDLE_SRI}\` |" >> /tmp/new_hashes.txt
+          echo "| \`sw.js\` | \`${SW_SRI}\` |" >> /tmp/new_hashes.txt
           echo "<!-- BUILD_HASHES_END -->" >> /tmp/new_hashes.txt
           
           # Use awk to replace the section

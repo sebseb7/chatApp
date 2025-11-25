@@ -120,11 +120,11 @@ npm run toggle-admin <user_id>
 Verify the integrity of deployed files by comparing SHA-256 hashes:
 
 <!-- BUILD_HASHES_START -->
-| File | SHA-256 |
-|------|---------|
-| `index.html` | `not yet built` |
-| `bundle.js` | `not yet built` |
-| `sw.js` | `not yet built` |
+| File | SRI Hash (compare with [srihash.org](https://srihash.org)) |
+|------|-------------------------------------------------------------|
+| `index.html` | `sha256-not-yet-built` |
+| `bundle.js` | `sha256-not-yet-built` |
+| `sw.js` | `sha256-not-yet-built` |
 <!-- BUILD_HASHES_END -->
 
 **Verify online:** [index.html](https://www.srihash.org/?url=https://c.growheads.de/index.html) | [bundle.js](https://www.srihash.org/?url=https://c.growheads.de/bundle.js) | [sw.js](https://www.srihash.org/?url=https://c.growheads.de/sw.js)
