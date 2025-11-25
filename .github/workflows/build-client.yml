@@ -56,17 +56,32 @@ jobs:
           echo "bundle.js: $BUNDLE_HASH"
           echo "sw.js: $SW_HASH"
           
-          # Generate new hash table
-          NEW_TABLE="<!-- BUILD_HASHES_START -->
+          # Create temporary file with new content
+          cat > /tmp/new_hashes.txt << 'MARKER'
+          <!-- BUILD_HASHES_START -->
           | File | SHA-256 |
           |------|---------|
-          | \`index.html\` | \`${INDEX_HASH}\` |
-          | \`bundle.js\` | \`${BUNDLE_HASH}\` |
-          | \`sw.js\` | \`${SW_HASH}\` |
-          <!-- BUILD_HASHES_END -->"
+          MARKER
+          echo "| \`index.html\` | \`${INDEX_HASH}\` |" >> /tmp/new_hashes.txt
+          echo "| \`bundle.js\` | \`${BUNDLE_HASH}\` |" >> /tmp/new_hashes.txt
+          echo "| \`sw.js\` | \`${SW_HASH}\` |" >> /tmp/new_hashes.txt
+          echo "<!-- BUILD_HASHES_END -->" >> /tmp/new_hashes.txt
           
-          # Replace the section in README using sed
-          sed -i '/<!-- BUILD_HASHES_START -->/,/<!-- BUILD_HASHES_END -->/c\'"$NEW_TABLE" README.md
+          # Use awk to replace the section
+          awk '
+            /<!-- BUILD_HASHES_START -->/ { 
+              while ((getline line < "/tmp/new_hashes.txt") > 0) print line
+              skip = 1
+              next
+            }
+            /<!-- BUILD_HASHES_END -->/ { 
+              skip = 0
+              next
+            }
+            !skip { print }
+          ' README.md > /tmp/README_new.md
+          
+          mv /tmp/README_new.md README.md
           
           echo "Updated README.md:"
           grep -A7 "BUILD_HASHES_START" README.md
