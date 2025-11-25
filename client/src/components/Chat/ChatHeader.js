@@ -31,7 +31,21 @@ class ChatHeader extends Component {
         if (!selectedUser) return null;
         
         return (
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Box 
+                display="flex" 
+                justifyContent="space-between" 
+                alignItems="center" 
+                mb={2}
+                sx={{
+                    flexShrink: 0,
+                    ...(isMobile && {
+                        background: 'linear-gradient(180deg, #152428 0%, #0f1f23 100%)',
+                        py: 1,
+                        mx: -1,
+                        px: 1,
+                    })
+                }}
+            >
                 <Box display="flex" alignItems="center" gap={1}>
                     {isMobile && (
                         <IconButton onClick={() => setSelectedUser(null)} edge="start" color="inherit">

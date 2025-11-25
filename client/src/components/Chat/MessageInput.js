@@ -139,7 +139,7 @@ class MessageInput extends Component {
         const { isE2EEEnabled } = this.context;
         
         return (
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end', flexShrink: 0 }}>
                 <Tooltip
                     title={
                         <Box sx={{ p: 1 }}>

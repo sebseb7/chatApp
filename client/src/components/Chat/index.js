@@ -95,13 +95,24 @@ class ChatInner extends Component {
                     display: isMobile && !selectedUser ? 'none' : 'flex', 
                     flexDirection: 'column',
                     height: '100dvh',
-                    width: isMobile ? '100%' : 'auto'
+                    width: isMobile ? '100%' : 'auto',
+                    overflow: 'hidden',
+                    // On mobile, use fixed positioning to prevent keyboard from pushing content
+                    ...(isMobile && selectedUser && {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        zIndex: 1,
+                        background: '#0a1214',
+                    }),
                 }}>
                     {selectedUser ? (
                         <>
                             <ChatHeader />
                             
-                            <Paper ref={this.messagesContainerRef} sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto' }}>
+                            <Paper ref={this.messagesContainerRef} sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto', minHeight: 0 }}>
                                 {/* Load older messages button */}
                                 {canLoadMore && filteredMessages.length > 0 && (
                                     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
