@@ -122,8 +122,8 @@ Verify the integrity of deployed files by comparing SHA-256 hashes:
 <!-- BUILD_HASHES_START -->
 | File | SRI Hash (compare with [srihash.org](https://srihash.org)) |
 |------|-------------------------------------------------------------|
-| `index.html` | `sha256-JZv2U/8VP/rXu1JnWdmdSETae0r5kmqYZai2Fx2KGgE=` |
-| `bundle.js` | `sha256-CCSuZzXTiWp3BhkUNugJdj5wOMv/tgIVHbUBeI/sny8=` |
+| `index.html` | `sha256-hdYdegE8/u+MhB2HZCKz2sR/3gqWKdhTP7a95em2bCQ=` |
+| `bundle.js` | `sha256-xSpTVtpumpUuMO+Hr9C6TeyMqO9/hg3MKw8HXLqtHbc=` |
 | `sw.js` | `sha256-A4EjsQpU1fR3RBC3mnpKzq1gjuB46Wa9yAK8KoHXzxE=` |
 <!-- BUILD_HASHES_END -->
 
