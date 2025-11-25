@@ -12,11 +12,15 @@ import {
     IconButton,
     CircularProgress,
     Alert,
-    Divider
+    Divider,
+    Chip
 } from '@mui/material';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import RestoreIcon from '@mui/icons-material/Restore';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
+import { subscribeToPush, unsubscribeFromPush, getSubscriptionStatus, isPushSupported, getNotificationPermission, forceUpdateServiceWorker } from '../services/push';
 
 class ProfileSettings extends Component {
     constructor(props) {
@@ -27,7 +31,13 @@ class ProfileSettings extends Component {
             avatarFile: null,
             loading: false,
             error: null,
-            success: false
+            success: false,
+            testSuccess: false,
+            // Notification state
+            pushSupported: isPushSupported(),
+            notificationPermission: getNotificationPermission(),
+            pushSubscribed: false,
+            notificationLoading: false
         };
         this.fileInputRef = React.createRef();
     }
@@ -43,8 +53,131 @@ class ProfileSettings extends Component {
                 error: null,
                 success: false
             });
+            // Check notification status when dialog opens
+            this.checkNotificationStatus();
         }
     }
+
+    checkNotificationStatus = async () => {
+        const status = await getSubscriptionStatus();
+        this.setState({
+            pushSubscribed: status.subscribed,
+            notificationPermission: status.permission || getNotificationPermission()
+        });
+    };
+
+    handleEnableNotifications = async () => {
+        this.setState({ notificationLoading: true, error: null });
+        
+        try {
+            const result = await subscribeToPush();
+            
+            if (result.success) {
+                this.setState({
+                    pushSubscribed: true,
+                    notificationPermission: 'granted',
+                    notificationLoading: false
+                });
+            } else {
+                this.setState({
+                    error: result.error || 'Failed to enable notifications',
+                    notificationLoading: false,
+                    notificationPermission: getNotificationPermission()
+                });
+            }
+        } catch (err) {
+            this.setState({
+                error: err.message || 'Failed to enable notifications',
+                notificationLoading: false
+            });
+        }
+    };
+
+    handleDisableNotifications = async () => {
+        this.setState({ notificationLoading: true, error: null });
+        
+        try {
+            const result = await unsubscribeFromPush();
+            
+            if (result.success) {
+                this.setState({
+                    pushSubscribed: false,
+                    notificationLoading: false
+                });
+            } else {
+                this.setState({
+                    error: result.error || 'Failed to disable notifications',
+                    notificationLoading: false
+                });
+            }
+        } catch (err) {
+            this.setState({
+                error: err.message || 'Failed to disable notifications',
+                notificationLoading: false
+            });
+        }
+    };
+
+    handleTestNotification = async () => {
+        this.setState({ notificationLoading: true, error: null, testSuccess: false });
+        
+        try {
+            const response = await fetch('/api/push/test', {
+                method: 'POST',
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.setState({
+                    testSuccess: true,
+                    notificationLoading: false
+                });
+                // Clear success after 3 seconds
+                setTimeout(() => this.setState({ testSuccess: false }), 3000);
+            } else {
+                this.setState({
+                    error: data.error || 'Failed to send test notification',
+                    notificationLoading: false
+                });
+            }
+        } catch (err) {
+            this.setState({
+                error: err.message || 'Failed to send test notification',
+                notificationLoading: false
+            });
+        }
+    };
+
+    handleForceUpdateSW = async () => {
+        this.setState({ notificationLoading: true, error: null });
+        
+        try {
+            const result = await forceUpdateServiceWorker();
+            
+            if (result.success) {
+                // Re-subscribe after updating SW
+                const subResult = await subscribeToPush();
+                this.setState({
+                    testSuccess: true,
+                    pushSubscribed: subResult.success,
+                    notificationLoading: false
+                });
+                setTimeout(() => this.setState({ testSuccess: false }), 3000);
+            } else {
+                this.setState({
+                    error: result.error || 'Failed to update service worker',
+                    notificationLoading: false
+                });
+            }
+        } catch (err) {
+            this.setState({
+                error: err.message || 'Failed to update service worker',
+                notificationLoading: false
+            });
+        }
+    };
 
     handleNameChange = (e) => {
         this.setState({ customName: e.target.value, error: null });
@@ -258,6 +391,11 @@ class ProfileSettings extends Component {
                             Profile updated successfully!
                         </Alert>
                     )}
+                    {this.state.testSuccess && (
+                        <Alert severity="info" sx={{ mb: 2 }}>
+                            Test notification sent! Check if it appeared.
+                        </Alert>
+                    )}
 
                     {/* Avatar Section */}
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
@@ -346,6 +484,91 @@ class ProfileSettings extends Component {
                             </Box>
                         </>
                     )}
+
+                    {/* Notifications Section */}
+                    <Divider sx={{ my: 2 }} />
+                    <Box sx={{ 
+                        p: 2, 
+                        borderRadius: 2, 
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                            {this.state.pushSubscribed ? (
+                                <NotificationsActiveIcon color="primary" fontSize="small" />
+                            ) : (
+                                <NotificationsOffIcon color="disabled" fontSize="small" />
+                            )}
+                            <Typography variant="subtitle2">
+                                Push Notifications
+                            </Typography>
+                            {this.state.pushSubscribed && (
+                                <Chip label="Enabled" size="small" color="success" sx={{ ml: 'auto' }} />
+                            )}
+                            {this.state.notificationPermission === 'denied' && (
+                                <Chip label="Blocked" size="small" color="error" sx={{ ml: 'auto' }} />
+                            )}
+                        </Box>
+                        
+                        {!this.state.pushSupported ? (
+                            <Typography variant="caption" color="text.secondary">
+                                Push notifications are not supported in this browser.
+                            </Typography>
+                        ) : this.state.notificationPermission === 'denied' ? (
+                            <Typography variant="caption" color="text.secondary">
+                                Notifications are blocked. Please enable them in your browser settings.
+                            </Typography>
+                        ) : (
+                            <>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                                    {this.state.pushSubscribed 
+                                        ? 'You will receive notifications for new messages even when the browser is closed.'
+                                        : 'Enable notifications to be alerted when you receive new messages.'}
+                                </Typography>
+                                {this.state.pushSubscribed ? (
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={this.handleTestNotification}
+                                            disabled={this.state.notificationLoading || loading}
+                                        >
+                                            {this.state.notificationLoading ? <CircularProgress size={16} /> : 'Test'}
+                                        </Button>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            color="error"
+                                            startIcon={this.state.notificationLoading ? null : <NotificationsOffIcon />}
+                                            onClick={this.handleDisableNotifications}
+                                            disabled={this.state.notificationLoading || loading}
+                                        >
+                                            Disable
+                                        </Button>
+                                        <Button
+                                            variant="text"
+                                            size="small"
+                                            onClick={this.handleForceUpdateSW}
+                                            disabled={this.state.notificationLoading || loading}
+                                            sx={{ fontSize: '0.75rem', textTransform: 'none' }}
+                                        >
+                                            Fix/Update
+                                        </Button>
+                                    </Box>
+                                ) : (
+                                    <Button
+                                        variant="contained"
+                                        size="small"
+                                        startIcon={this.state.notificationLoading ? <CircularProgress size={16} /> : <NotificationsActiveIcon />}
+                                        onClick={this.handleEnableNotifications}
+                                        disabled={this.state.notificationLoading || loading}
+                                    >
+                                        Enable Notifications
+                                    </Button>
+                                )}
+                            </>
+                        )}
+                    </Box>
 
                     {/* Danger Zone - Delete Account */}
                     <Divider sx={{ my: 2 }} />

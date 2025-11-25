@@ -1,3 +1,5 @@
+const { sendPushToUser } = require('./push');
+
 module.exports = function (io, db) {
     // Map to track online users: userId -> { socketId, publicKey }
     const onlineUsers = new Map();
@@ -213,6 +215,22 @@ module.exports = function (io, db) {
 
                         // Echo back to sender (with delivered=false)
                         socket.emit('receive_message', { ...message, delivered: false });
+                        
+                        // Send push notification to offline user
+                        const messagePreview = type === 'eee' 
+                            ? '🔒 Encrypted message' 
+                            : (content.length > 50 ? content.substring(0, 50) + '...' : content);
+                        
+                        sendPushToUser(db, receiverId, {
+                            title: `New message from ${senderName}`,
+                            body: messagePreview,
+                            icon: senderAvatar || '/favicon.ico',
+                            tag: `dm-${socket.userId}`,
+                            data: {
+                                type: 'dm',
+                                senderId: socket.userId
+                            }
+                        });
                     }
                 }
 

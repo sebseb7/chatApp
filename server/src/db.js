@@ -57,6 +57,16 @@ async function initDB() {
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (messageId, userId)
     );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
 
   // Migration for existing tables

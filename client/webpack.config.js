@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = (env, argv) => {
     const isProduction = argv.mode === 'production';
@@ -16,6 +17,10 @@ module.exports = (env, argv) => {
             historyApiFallback: true,
             hot: !isProduction,
             liveReload: !isProduction,
+            static: {
+                directory: path.join(__dirname, 'public'),
+                publicPath: '/'
+            },
             client: isProduction ? false : {
                 webSocketURL: 'wss://c.growheads.de/ws',
             },
@@ -51,6 +56,11 @@ module.exports = (env, argv) => {
         plugins: [
             new HtmlWebpackPlugin({
                 template: './public/index.html'
+            }),
+            new CopyWebpackPlugin({
+                patterns: [
+                    { from: 'public/sw.js', to: 'sw.js' }
+                ]
             })
         ]
     };

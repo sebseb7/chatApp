@@ -1,3 +1,6 @@
+const dotenv = require('dotenv');
+dotenv.config(); // Load env vars FIRST before any modules that use them
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -6,9 +9,9 @@ const { Server } = require('socket.io');
 const passport = require('passport');
 const cookieSession = require('cookie-session');
 const multer = require('multer');
-const dotenv = require('dotenv');
 const { initDB } = require('./db');
 const configureAuth = require('./auth');
+const { saveSubscription, removeSubscription, getPublicVapidKey, sendPushToUser, getSubscriptionsForUser } = require('./push');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -41,8 +44,6 @@ const upload = multer({
         }
     }
 });
-
-dotenv.config();
 
 const app = express();
 app.set('trust proxy', 1); // trust first proxy
@@ -286,6 +287,121 @@ initDB().then(db => {
         } catch (err) {
             console.error('Error deleting account:', err);
             res.status(500).json({ error: 'Failed to delete account' });
+        }
+    });
+
+    // Push notification endpoints
+    app.get('/api/push/vapid-public-key', (req, res) => {
+        const publicKey = getPublicVapidKey();
+        if (publicKey) {
+            res.json({ publicKey });
+        } else {
+            res.status(503).json({ error: 'Push notifications not configured' });
+        }
+    });
+
+    app.post('/api/push/subscribe', async (req, res) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+
+        const { subscription } = req.body;
+        if (!subscription || !subscription.endpoint || !subscription.keys) {
+            return res.status(400).json({ error: 'Invalid subscription' });
+        }
+
+        try {
+            const success = await saveSubscription(db, req.user.id, subscription);
+            if (success) {
+                res.json({ success: true });
+            } else {
+                res.status(500).json({ error: 'Failed to save subscription' });
+            }
+        } catch (err) {
+            console.error('Error saving subscription:', err);
+            res.status(500).json({ error: 'Failed to save subscription' });
+        }
+    });
+
+    app.post('/api/push/unsubscribe', async (req, res) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+
+        const { endpoint } = req.body;
+        if (!endpoint) {
+            return res.status(400).json({ error: 'Endpoint required' });
+        }
+
+        try {
+            const success = await removeSubscription(db, endpoint);
+            res.json({ success });
+        } catch (err) {
+            console.error('Error removing subscription:', err);
+            res.status(500).json({ error: 'Failed to remove subscription' });
+        }
+    });
+
+    // Test push notification endpoint - sends a test notification to the current user
+    app.post('/api/push/test', async (req, res) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+
+        try {
+            const subscriptions = await getSubscriptionsForUser(db, req.user.id);
+            console.log(`[Push Test] User ${req.user.id} has ${subscriptions.length} subscription(s)`);
+            
+            if (subscriptions.length === 0) {
+                return res.status(400).json({ 
+                    error: 'No push subscriptions found',
+                    hint: 'Enable notifications in Profile Settings first'
+                });
+            }
+
+            const result = await sendPushToUser(db, req.user.id, {
+                title: 'Test Notification',
+                body: 'If you see this, push notifications are working! 🎉',
+                icon: '/favicon.ico',
+                tag: 'test-notification',
+                data: {
+                    type: 'test',
+                    timestamp: Date.now()
+                }
+            });
+
+            console.log(`[Push Test] Notification sent to user ${req.user.id}`);
+            res.json({ 
+                success: true, 
+                message: 'Test notification sent',
+                subscriptionCount: subscriptions.length
+            });
+        } catch (err) {
+            console.error('[Push Test] Error:', err);
+            res.status(500).json({ error: 'Failed to send test notification', details: err.message });
+        }
+    });
+
+    // Debug endpoint to check push subscription status
+    app.get('/api/push/status', async (req, res) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+
+        try {
+            const subscriptions = await getSubscriptionsForUser(db, req.user.id);
+            res.json({
+                userId: req.user.id,
+                subscriptionCount: subscriptions.length,
+                subscriptions: subscriptions.map(s => ({
+                    id: s.id,
+                    endpoint: s.endpoint.substring(0, 50) + '...',
+                    createdAt: s.createdAt
+                }))
+            });
+        } catch (err) {
+            console.error('Error getting push status:', err);
+            res.status(500).json({ error: 'Failed to get subscription status' });
         }
     });
 

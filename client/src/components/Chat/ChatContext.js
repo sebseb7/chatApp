@@ -1,5 +1,6 @@
 import React, { createContext, Component } from 'react';
 import { exportPublicKey, importPublicKey, loadKeys, clearKeys, previewPublicKey, decryptMessage } from '../../services/crypto';
+import { subscribeToPush, isPushSupported } from '../../services/push';
 
 export const ChatContext = createContext();
 
@@ -89,7 +90,25 @@ export class ChatProvider extends Component {
     componentDidMount() {
         this.initKeys();
         this.setupSocketListeners();
+        this.initPushNotifications();
     }
+    
+    initPushNotifications = async () => {
+        if (!isPushSupported()) {
+            console.log('Push notifications not supported');
+            return;
+        }
+        
+        // Wait a moment for the app to settle, then request push permission
+        setTimeout(async () => {
+            const result = await subscribeToPush();
+            if (result.success) {
+                console.log('Push notifications enabled');
+            } else {
+                console.log('Push notifications not enabled:', result.error);
+            }
+        }, 2000);
+    };
     
     componentDidUpdate(prevProps, prevState) {
         // Update ref when selectedUser changes
