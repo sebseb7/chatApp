@@ -41,6 +41,20 @@ async function initDB() {
       isMuted INTEGER DEFAULT 0,
       PRIMARY KEY (groupId, userId)
     );
+
+    CREATE TABLE IF NOT EXISTS message_reads (
+      messageId INTEGER,
+      userId INTEGER,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (messageId, userId)
+    );
+
+    CREATE TABLE IF NOT EXISTS message_deliveries (
+      messageId INTEGER,
+      userId INTEGER,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (messageId, userId)
+    );
   `);
 
   // Migration for existing tables

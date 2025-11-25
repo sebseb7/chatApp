@@ -32,6 +32,46 @@ module.exports = function (io, db) {
                     await broadcastGroupList(userId);
 
                     console.log(`User ${user.name} (${userId}) joined.`);
+
+                    // Fetch missed messages
+                    // Logic: Find messages where I am the receiver (or group member) AND messageId NOT IN message_deliveries
+                    // Note: For groups, we need to join group_members to check membership.
+                    // Simplified query for MVP:
+                    // 1. Direct Messages
+                    const missedDMs = await db.all(`
+                        SELECT m.*, u.name as senderName, u.avatar as senderAvatar
+                        FROM messages m
+                        JOIN users u ON m.senderId = u.id
+                        WHERE m.receiverId = ? 
+                        AND m.id NOT IN (SELECT messageId FROM message_deliveries WHERE userId = ?)
+                    `, userId, userId);
+
+                    // 2. Group Messages
+                    // We need to find groups I am in, then find messages in those groups not delivered to me.
+                    const missedGroupMsgs = await db.all(`
+                        SELECT m.*, u.name as senderName, u.avatar as senderAvatar
+                        FROM messages m
+                        JOIN users u ON m.senderId = u.id
+                        JOIN group_members gm ON m.groupId = gm.groupId
+                        WHERE gm.userId = ?
+                        AND m.id NOT IN (SELECT messageId FROM message_deliveries WHERE userId = ?)
+                    `, userId, userId);
+
+                    const allMissed = [...missedDMs, ...missedGroupMsgs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                    for (const msg of allMissed) {
+                        socket.emit('receive_message', msg);
+
+                        // Mark as delivered
+                        await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', msg.id, userId);
+
+                        // Notify sender of delivery
+                        const senderSocketId = onlineUsers.get(msg.senderId);
+                        if (senderSocketId) {
+                            io.to(senderSocketId).emit('delivery_update', { messageId: msg.id, userId });
+                        }
+                    }
+
                 }
             } catch (err) {
                 console.error('Error joining:', err);
@@ -109,9 +149,13 @@ module.exports = function (io, db) {
                     socket.userId, receiverId || 0, groupId || 0, content, type
                 );
 
+                const sender = await db.get('SELECT name, avatar FROM users WHERE id = ?', socket.userId);
+
                 const message = {
                     id: result.lastID,
                     senderId: socket.userId,
+                    senderName: sender ? sender.name : 'Unknown',
+                    senderAvatar: sender ? sender.avatar : null,
                     receiverId,
                     groupId,
                     content,
@@ -126,6 +170,17 @@ module.exports = function (io, db) {
                         // Broadcast to ALL online users
                         for (const [userId, socketId] of onlineUsers) {
                             io.to(socketId).emit('receive_message', message);
+                            // Mark delivered for online users
+                            // We don't track deliveries for public groups usually (too much data), 
+                            // but for consistency let's skip or implement if needed. 
+                            // User said "when a user isn't online he will never receive the message... queued icon...".
+                            // This implies reliability.
+                            // But for public groups, tracking delivery for EVERY user is heavy.
+                            // Let's assume "Queued" is critical for DMs as per plan.
+                            // But we should still deliver missed public messages if possible?
+                            // The query in 'join' handles missed group messages.
+                            // So we should record delivery here for online users to avoid re-sending on join.
+                            await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', message.id, userId);
                         }
                     } else {
                         // Broadcast to all group members
@@ -134,6 +189,7 @@ module.exports = function (io, db) {
                             const memberSocketId = onlineUsers.get(member.userId);
                             if (memberSocketId) {
                                 io.to(memberSocketId).emit('receive_message', message);
+                                await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', message.id, member.userId);
                             }
                         }
                     }
@@ -142,9 +198,24 @@ module.exports = function (io, db) {
                     const receiverSocketId = onlineUsers.get(receiverId);
                     if (receiverSocketId) {
                         io.to(receiverSocketId).emit('receive_message', message);
+                        await db.run('INSERT OR IGNORE INTO message_deliveries (messageId, userId) VALUES (?, ?)', message.id, receiverId);
+
+                        // Tell sender it's delivered
+                        socket.emit('delivery_update', { messageId: message.id, userId: receiverId });
+                    } else {
+                        // Receiver is offline
+                        // Tell sender it's queued (implied by lack of delivery_update, or explicit?)
+                        // User wants "queued icon... which should go away soon it's no longer queued".
+                        // So we can send an explicit "queued" event or just NOT send "delivered".
+                        // Client defaults to "queued" until "delivered".
+                        // But we need to make sure the client knows the message ID to track.
+                        // The client receives `receive_message` (echo) below.
+                        // We can add `delivered: false` to that echo.
                     }
                     // Emit back to sender (optimistic UI update usually handles this, but good for confirmation)
-                    socket.emit('receive_message', message);
+                    // Add initial delivery status
+                    const isDelivered = !!receiverSocketId;
+                    socket.emit('receive_message', { ...message, delivered: isDelivered });
                 }
 
             } catch (err) {
@@ -470,6 +541,91 @@ module.exports = function (io, db) {
         socket.on('get_groups', async () => {
             if (!socket.userId) return;
             await broadcastGroupList(socket.userId);
+        });
+
+        socket.on('mark_read', async ({ messageId, groupId, senderId }) => {
+            if (!socket.userId) return;
+            try {
+                // Insert read receipt (ignore if already exists)
+                await db.run('INSERT OR IGNORE INTO message_reads (messageId, userId) VALUES (?, ?)', messageId, socket.userId);
+
+                // Fetch user info for broadcasting
+                const reader = await db.get('SELECT id, name, avatar, isInvisible FROM users WHERE id = ?', socket.userId);
+
+                // Determine who should see this read receipt
+                // Logic:
+                // 1. If reader is Visible -> Broadcast to everyone (who has the message)
+                // 2. If reader is Invisible:
+                //    - If Public Group -> Do NOT broadcast (or broadcast only to admins? No, user said "ignore invisible people of course")
+                //    - If Private Group/DM -> Broadcast (User said "in private group or direct talk you also see the read state")
+
+                let shouldBroadcast = true;
+                let targetSocketIds = []; // If empty and shouldBroadcast is true, we might broadcast to room/all
+
+                if (reader.isInvisible) {
+                    if (groupId) {
+                        const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
+                        if (group && group.isPublic) {
+                            // Public group + Invisible user -> Do NOT show read receipt
+                            shouldBroadcast = false;
+                        } else {
+                            // Private group + Invisible user -> Show read receipt
+                            shouldBroadcast = true;
+                        }
+                    } else {
+                        // Direct Message + Invisible user -> Show read receipt
+                        shouldBroadcast = true;
+                    }
+                }
+
+                if (shouldBroadcast) {
+                    const readUpdate = {
+                        messageId,
+                        user: {
+                            id: reader.id,
+                            name: reader.name,
+                            avatar: reader.avatar
+                        }
+                    };
+
+                    if (groupId) {
+                        const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
+                        if (group && group.isPublic) {
+                            // Public Group: Broadcast to all online users (except if reader is invisible, handled above)
+                            // Wait, if reader is visible, we broadcast to everyone.
+                            for (const [uid, sid] of onlineUsers) {
+                                io.to(sid).emit('message_read_update', readUpdate);
+                            }
+                        } else {
+                            // Private Group: Broadcast to members
+                            const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
+                            for (const member of members) {
+                                const sid = onlineUsers.get(member.userId);
+                                if (sid) io.to(sid).emit('message_read_update', readUpdate);
+                            }
+                        }
+                    } else {
+                        // Direct Message
+                        // Notify sender and receiver (reader)
+                        // Reader (self)
+                        socket.emit('message_read_update', readUpdate);
+
+                        // Sender (if online)
+                        // We need to know who the other person is. 
+                        // In DM, senderId passed from client is the OTHER person (the one who sent the message).
+                        // Wait, if I read a message, I am the reader. The message sender is `senderId`.
+                        if (senderId) {
+                            const senderSocketId = onlineUsers.get(senderId);
+                            if (senderSocketId) {
+                                io.to(senderSocketId).emit('message_read_update', readUpdate);
+                            }
+                        }
+                    }
+                }
+
+            } catch (err) {
+                console.error('Error marking read:', err);
+            }
         });
 
         // Helper to send the list of groups a user belongs to

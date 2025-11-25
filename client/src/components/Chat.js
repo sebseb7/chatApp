@@ -12,6 +12,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import MarkdownIcon from '@mui/icons-material/Code';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ReactMarkdown from 'react-markdown';
 import { useSocket } from '../context/SocketContext';
 
@@ -34,6 +35,8 @@ const Chat = ({ user }) => {
     const [showGroupDialog, setShowGroupDialog] = useState(false);
     const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
     const [unreadCounts, setUnreadCounts] = useState({});
+    const [readReceipts, setReadReceipts] = useState({}); // { messageId: [user1, user2...] }
+    const [deliveryStatus, setDeliveryStatus] = useState({}); // { messageId: 'delivered' | 'queued' }
 
     // Ref to access current selectedUser inside socket callback closure if needed, 
     // or just use functional state update logic which is safer.
@@ -63,6 +66,14 @@ const Chat = ({ user }) => {
         socket.on('receive_message', (message) => {
             setMessages((prev) => [...prev, message]);
 
+            // Set initial delivery status if provided (for sender)
+            if (message.senderId === user.id && message.delivered !== undefined) {
+                setDeliveryStatus(prev => ({
+                    ...prev,
+                    [message.id]: message.delivered ? 'delivered' : 'queued'
+                }));
+            }
+
             const isGroupMsg = !!message.groupId;
             const chatId = isGroupMsg ? message.groupId : message.senderId;
 
@@ -87,6 +98,24 @@ const Chat = ({ user }) => {
             }
         });
 
+        socket.on('message_read_update', ({ messageId, user }) => {
+            setReadReceipts(prev => {
+                const currentReaders = prev[messageId] || [];
+                if (currentReaders.some(u => u.id === user.id)) return prev;
+                return {
+                    ...prev,
+                    [messageId]: [...currentReaders, user]
+                };
+            });
+        });
+
+        socket.on('delivery_update', ({ messageId }) => {
+            setDeliveryStatus(prev => ({
+                ...prev,
+                [messageId]: 'delivered'
+            }));
+        });
+
         socket.emit('get_groups');
 
         return () => {
@@ -94,6 +123,8 @@ const Chat = ({ user }) => {
             socket.off('group_list');
             socket.off('group_members');
             socket.off('receive_message');
+            socket.off('message_read_update');
+            socket.off('delivery_update');
         };
     }, [socket, user.id]); // Added user.id dependency
 
@@ -109,6 +140,42 @@ const Chat = ({ user }) => {
             setGroupMembers([]);
         }
     }, [selectedUser, socket]);
+
+    // Mark messages as read when they are displayed
+    useEffect(() => {
+        if (!selectedUser || !messages.length) return;
+
+        // Simple logic: Mark all visible messages from others as read
+        // In a real app, use IntersectionObserver for precise visibility
+        const unreadMessages = messages.filter(m => {
+            if (m.senderId === user.id) return false; // Don't mark own messages
+
+            // Check if I already read it (locally tracked to avoid spamming)
+            // Ideally we check `readReceipts` but that comes from server.
+            // Let's just emit for messages in the current chat view.
+            // Optimization: Only emit if we haven't seen this messageId in this session?
+            // For MVP, just emit. Server handles "INSERT OR IGNORE".
+
+            if (selectedUser.isGroup) {
+                return m.groupId === selectedUser.id;
+            } else {
+                return (m.senderId === selectedUser.id && m.receiverId === user.id);
+            }
+        });
+
+        unreadMessages.forEach(m => {
+            // Check if I am already in the read list for this message to avoid socket spam
+            const readers = readReceipts[m.id] || [];
+            if (!readers.some(r => r.id === user.id)) {
+                socket.emit('mark_read', {
+                    messageId: m.id,
+                    groupId: m.groupId,
+                    senderId: m.senderId
+                });
+            }
+        });
+
+    }, [messages, selectedUser, readReceipts, user.id, socket]);
 
     const handleLogout = () => {
         window.location.href = '/api/logout';
@@ -196,10 +263,30 @@ const Chat = ({ user }) => {
         }
     };
 
+    const handleSenderClick = (senderId) => {
+        // Find user in the visible users list
+        const targetUser = users.find(u => u.id === senderId);
+
+        if (targetUser) {
+            // User is visible -> Start private chat
+            setSelectedUser(targetUser);
+            setUnreadCounts(prev => ({ ...prev, [targetUser.id]: 0 }));
+        } else {
+            // User is NOT visible (invisible and no shared private group)
+            // Show error/notification
+            // Since we don't have a global snackbar for custom messages easily accessible without state,
+            // let's just alert for MVP or use the existing error handling mechanism if possible.
+            // But wait, we can use a simple alert or console log, or better, reuse the snackbar?
+            // The existing snackbar is for connection status.
+            // Let's add a local state for error message.
+            alert("Cannot start private chat with this user (User is invisible)");
+        }
+    };
+
     const filteredMessages = selectedUser
         ? messages.filter(m => {
             if (selectedUser.isGroup) {
-                return m.groupId === selectedUser.id; // Assuming message has groupId
+                return m.groupId === selectedUser.id;
             } else {
                 return (m.senderId === user.id && m.receiverId === selectedUser.id) ||
                     (m.senderId === selectedUser.id && m.receiverId === user.id);
@@ -228,16 +315,19 @@ const Chat = ({ user }) => {
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                         <Typography variant="caption">{currentUser.name} ({currentUser.isInvisible ? 'Invisible' : 'Visible'})</Typography>
                         <Box>
-                            <IconButton
-                                size="small"
-                                onClick={() => {
-                                    const newStatus = currentUser.isInvisible ? 'visible' : 'invisible';
-                                    socket.emit('set_status', { status: newStatus });
-                                }}
-                                title="Toggle Invisible"
-                            >
-                                {currentUser.isInvisible ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                            </IconButton>
+                            <Tooltip title={currentUser.isInvisible
+                                ? "You are currently invisible. You appear offline, and only users in shared private groups can start chats with you."
+                                : "You are currently visible. Anyone can see you and start a chat."}>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                        const newStatus = currentUser.isInvisible ? 'visible' : 'invisible';
+                                        socket.emit('set_status', { status: newStatus });
+                                    }}
+                                >
+                                    {currentUser.isInvisible ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                </IconButton>
+                            </Tooltip>
                             <IconButton
                                 size="small"
                                 onClick={handleLogout}
@@ -406,23 +496,54 @@ const Chat = ({ user }) => {
                                         justifyContent: msg.senderId === user.id ? 'flex-end' : 'flex-start',
                                         mb: 1
                                     }}>
-                                        <Paper sx={{
-                                            p: 1.5,
-                                            background: msg.senderId === user.id
-                                                ? 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)'
-                                                : 'linear-gradient(135deg, #1a2f35 0%, #254552 100%)',
-                                            maxWidth: '70%',
-                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-                                            transition: 'transform 0.2s ease',
-                                            '&:hover': {
-                                                transform: 'translateY(-1px)',
-                                            }
+                                        <Box sx={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: msg.senderId === user.id ? 'flex-end' : 'flex-start',
+                                            maxWidth: '70%'
                                         }}>
-                                            <ReactMarkdown>{msg.content}</ReactMarkdown>
-                                            <Typography variant="caption" display="block" align="right">
-                                                {new Date(msg.timestamp).toLocaleTimeString()}
-                                            </Typography>
-                                        </Paper>
+                                            <Paper sx={{
+                                                p: 1.5,
+                                                background: msg.senderId === user.id
+                                                    ? 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)'
+                                                    : 'linear-gradient(135deg, #1a2f35 0%, #254552 100%)',
+                                                width: '100%',
+                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                                                transition: 'transform 0.2s ease',
+                                                '&:hover': {
+                                                    transform: 'translateY(-1px)',
+                                                }
+                                            }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5, cursor: 'pointer' }} onClick={() => handleSenderClick(msg.senderId)}>
+                                                    <Avatar src={msg.senderAvatar} sx={{ width: 24, height: 24, mr: 1 }} />
+                                                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'secondary.main' }}>
+                                                        {msg.senderName}
+                                                    </Typography>
+                                                </Box>
+                                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                                <Typography variant="caption" display="block" align="right">
+                                                    {new Date(msg.timestamp).toLocaleTimeString()}
+                                                </Typography>
+                                            </Paper>
+                                            {/* Read Receipts & Delivery Status */}
+                                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5, width: '100%', alignItems: 'center' }}>
+                                                {/* Queued Icon for Sender */}
+                                                {msg.senderId === user.id && deliveryStatus[msg.id] === 'queued' && (
+                                                    <Tooltip title="Queued (Receiver is offline)">
+                                                        <AccessTimeIcon sx={{ fontSize: 16, color: 'text.secondary', mr: 0.5 }} />
+                                                    </Tooltip>
+                                                )}
+
+                                                {(readReceipts[msg.id] || []).map(reader => (
+                                                    <Tooltip key={reader.id} title={`Read by ${reader.name}`}>
+                                                        <Avatar
+                                                            src={reader.avatar}
+                                                            sx={{ width: 16, height: 16, ml: 0.5, border: '1px solid #1a3540' }}
+                                                        />
+                                                    </Tooltip>
+                                                ))}
+                                            </Box>
+                                        </Box>
                                     </Box>
                                 );
                             })}
