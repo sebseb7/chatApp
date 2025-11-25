@@ -6,6 +6,9 @@ on:
       - main
       - master
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,3 +44,38 @@ jobs:
           path: client/dist/
           retention-days: 30
 
+      - name: Update README with hashes
+        working-directory: .
+        run: |
+          # Read checksums
+          INDEX_HASH=$(grep 'index.html$' client/dist/checksums.sha256 | cut -d' ' -f1)
+          BUNDLE_HASH=$(grep 'bundle.js$' client/dist/checksums.sha256 | cut -d' ' -f1)
+          SW_HASH=$(grep 'sw.js$' client/dist/checksums.sha256 | cut -d' ' -f1)
+          
+          echo "index.html: $INDEX_HASH"
+          echo "bundle.js: $BUNDLE_HASH"
+          echo "sw.js: $SW_HASH"
+          
+          # Generate new hash table
+          NEW_TABLE="<!-- BUILD_HASHES_START -->
+          | File | SHA-256 |
+          |------|---------|
+          | \`index.html\` | \`${INDEX_HASH}\` |
+          | \`bundle.js\` | \`${BUNDLE_HASH}\` |
+          | \`sw.js\` | \`${SW_HASH}\` |
+          <!-- BUILD_HASHES_END -->"
+          
+          # Replace the section in README using sed
+          sed -i '/<!-- BUILD_HASHES_START -->/,/<!-- BUILD_HASHES_END -->/c\'"$NEW_TABLE" README.md
+          
+          echo "Updated README.md:"
+          grep -A7 "BUILD_HASHES_START" README.md
+
+      - name: Commit and push README changes
+        working-directory: .
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add README.md
+          git diff --staged --quiet || git commit -m "chore: update build hashes in README [skip ci]"
+          git push

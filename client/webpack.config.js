@@ -2,6 +2,7 @@ const path = require('path');
 const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const { SubresourceIntegrityPlugin } = require('webpack-subresource-integrity');
 
 module.exports = (env, argv) => {
     const isProduction = argv.mode === 'production';
@@ -14,7 +15,9 @@ module.exports = (env, argv) => {
             publicPath: '/',
             // Reproducible build: use deterministic chunk and module IDs
             hashFunction: 'sha256',
-            hashDigestLength: 16
+            hashDigestLength: 16,
+            // Required for Subresource Integrity
+            crossOriginLoading: 'anonymous'
         },
         // Reproducible build: deterministic module/chunk IDs
         optimization: {
@@ -74,6 +77,11 @@ module.exports = (env, argv) => {
                 patterns: [
                     { from: 'public/sw.js', to: 'sw.js' }
                 ]
+            }),
+            // Add Subresource Integrity hashes to script/link tags
+            new SubresourceIntegrityPlugin({
+                hashFuncNames: ['sha256'],
+                enabled: isProduction
             })
         ]
     };
