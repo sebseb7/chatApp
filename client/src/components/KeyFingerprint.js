@@ -9,7 +9,8 @@ import * as jdenticon from 'jdenticon';
 class KeyFingerprint extends Component {
     // Generate a fingerprint string (hex) for text display
     generateFingerprintHex(publicKey) {
-        const keyStr = typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey);
+        const normalized = this.normalizeKey(publicKey);
+        const keyStr = typeof normalized === 'string' ? normalized : JSON.stringify(normalized);
         
         // Simple hash to create fingerprint segments
         const hashString = (str, salt = 0) => {
@@ -32,10 +33,27 @@ class KeyFingerprint extends Component {
         return parts.join(' ');
     }
 
+    // Normalize the public key to ensure consistent fingerprinting
+    // Only use the essential EC key components in a consistent order
+    normalizeKey(publicKey) {
+        if (!publicKey || typeof publicKey === 'string') return publicKey;
+        // For EC keys, only use kty, crv, x, y in consistent order
+        if (publicKey.kty === 'EC' && publicKey.x && publicKey.y) {
+            return {
+                kty: publicKey.kty,
+                crv: publicKey.crv,
+                x: publicKey.x,
+                y: publicKey.y
+            };
+        }
+        return publicKey;
+    }
+
     // Get the key string for jdenticon
     getKeyString(publicKey) {
         if (!publicKey) return '';
-        return typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey);
+        const normalized = this.normalizeKey(publicKey);
+        return typeof normalized === 'string' ? normalized : JSON.stringify(normalized);
     }
 
     render() {

@@ -16,9 +16,7 @@ import {
 } from '@mui/material';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import RestoreIcon from '@mui/icons-material/Restore';
-import LockIcon from '@mui/icons-material/Lock';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
-import KeyFingerprint from './KeyFingerprint';
 
 class ProfileSettings extends Component {
     constructor(props) {
@@ -346,37 +344,6 @@ class ProfileSettings extends Component {
                                 >
                                     Reset to Google Profile
                                 </Button>
-                            </Box>
-                        </>
-                    )}
-
-                    {/* E2EE Key Fingerprint */}
-                    {this.props.userPublicKey && (
-                        <>
-                            <Divider sx={{ my: 2 }} />
-                            <Box sx={{ 
-                                p: 2, 
-                                borderRadius: 2, 
-                                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                                border: '1px solid rgba(0, 217, 255, 0.2)'
-                            }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                    <LockIcon color="primary" fontSize="small" />
-                                    <Typography variant="subtitle2" color="text.secondary">
-                                        Your E2EE Key Fingerprint
-                                    </Typography>
-                                </Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                                    Share this visual pattern with contacts to verify your identity and prevent MITM attacks.
-                                    Compare fingerprints in person or via a trusted channel.
-                                </Typography>
-                                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                    <KeyFingerprint 
-                                        publicKey={this.props.userPublicKey} 
-                                        size={80} 
-                                        showHex={true}
-                                    />
-                                </Box>
                             </Box>
                         </>
                     )}

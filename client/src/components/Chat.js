@@ -18,7 +18,7 @@ import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ReactMarkdown from 'react-markdown';
 import { useSocket } from '../context/SocketContext';
-import { generateAndStoreKeys, loadKeys, exportPublicKey, importPublicKey, encryptMessage, decryptMessage, clearKeys } from '../services/crypto';
+import { generateAndStoreKeys, loadKeys, exportPublicKey, importPublicKey, encryptMessage, decryptMessage, clearKeys, previewPublicKey } from '../services/crypto';
 import ProfileSettings from './ProfileSettings';
 import KeyFingerprint from './KeyFingerprint';
 
@@ -54,6 +54,7 @@ const Chat = ({ user, onUserUpdate }) => {
     const [decryptedMessages, setDecryptedMessages] = useState({}); // messageId -> content
     const [hasStoredKeys, setHasStoredKeys] = useState(false);
     const [myPublicKeyJwk, setMyPublicKeyJwk] = useState(null); // My public key in JWK format for display
+    const [previewKeyJwk, setPreviewKeyJwk] = useState(null); // Live preview of key from passphrase
     const [showKeyFingerprintDialog, setShowKeyFingerprintDialog] = useState(false);
     const [viewingKeyUser, setViewingKeyUser] = useState(null); // User whose key we're viewing
     const [fullscreenImage, setFullscreenImage] = useState(null); // Image URL for fullscreen view
@@ -99,6 +100,26 @@ const Chat = ({ user, onUserUpdate }) => {
         };
         initKeys();
     }, [user.googleId]);
+
+    // Live preview of key fingerprint as user types passphrase (debounced)
+    useEffect(() => {
+        if (!passphrase || !showPassphraseDialog) {
+            setPreviewKeyJwk(null);
+            return;
+        }
+        
+        const timer = setTimeout(async () => {
+            try {
+                const preview = await previewPublicKey(passphrase, user.googleId);
+                setPreviewKeyJwk(preview);
+            } catch (err) {
+                console.warn('Preview key generation failed:', err);
+                setPreviewKeyJwk(null);
+            }
+        }, 300); // 300ms debounce
+        
+        return () => clearTimeout(timer);
+    }, [passphrase, showPassphraseDialog, user.googleId]);
 
     const handlePassphraseSubmit = async () => {
         try {
@@ -554,7 +575,7 @@ const Chat = ({ user, onUserUpdate }) => {
                                     <SettingsIcon />
                                 </IconButton>
                             </Tooltip>
-                            <Tooltip title="Set Passphrase for E2EE">
+                            <Tooltip title={keyPair ? "E2EE Settings" : "Set Passphrase for E2EE"}>
                                 <IconButton size="small" onClick={() => setShowPassphraseDialog(true)}>
                                     <VpnKeyIcon color={keyPair ? "primary" : "disabled"} />
                                 </IconButton>
@@ -964,13 +985,17 @@ const Chat = ({ user, onUserUpdate }) => {
             </Box>
 
             {/* Passphrase Dialog */}
-            <Dialog open={showPassphraseDialog} onClose={() => setShowPassphraseDialog(false)}>
-                <DialogTitle>Set E2EE Passphrase</DialogTitle>
+            <Dialog open={showPassphraseDialog} onClose={() => setShowPassphraseDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <VpnKeyIcon color="primary" />
+                        E2EE Passphrase
+                    </Box>
+                </DialogTitle>
                 <DialogContent>
-                    <Typography variant="body2" sx={{ mb: 2 }}>
-                        Enter a passphrase to generate your encryption keys.
-                        This passphrase is required to decrypt your private messages.
-                        If you lose it, you lose access to your encrypted history.
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Your passphrase deterministically generates your encryption keys.
+                        The same passphrase will always produce the same fingerprint.
                     </Typography>
                     <TextField
                         autoFocus
@@ -982,11 +1007,34 @@ const Chat = ({ user, onUserUpdate }) => {
                         value={passphrase}
                         onChange={(e) => setPassphrase(e.target.value)}
                     />
+                    
+                    {/* Live Fingerprint Preview */}
+                    {previewKeyJwk && (
+                        <Box sx={{ 
+                            mt: 3, 
+                            p: 2, 
+                            borderRadius: 2, 
+                            backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                            border: '1px solid rgba(0, 217, 255, 0.2)',
+                            textAlign: 'center'
+                        }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                                Your Key Fingerprint
+                            </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                                <KeyFingerprint 
+                                    publicKey={previewKeyJwk} 
+                                    size={80} 
+                                    showHex={true}
+                                />
+                            </Box>
+                        </Box>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Reset Keys</Button>}
                     <Button onClick={() => setShowPassphraseDialog(false)}>Cancel</Button>
-                    <Button onClick={handlePassphraseSubmit} disabled={!passphrase}>
+                    <Button onClick={handlePassphraseSubmit} disabled={!passphrase} variant="contained">
                         {hasStoredKeys ? "Unlock" : "Generate Keys"}
                     </Button>
                 </DialogActions>
@@ -1031,7 +1079,6 @@ const Chat = ({ user, onUserUpdate }) => {
                 open={showProfileDialog}
                 onClose={() => setShowProfileDialog(false)}
                 user={currentUser}
-                userPublicKey={myPublicKeyJwk}
                 onSave={(updatedUser) => {
                     // Update local user state via parent
                     if (onUserUpdate) {
@@ -1073,9 +1120,9 @@ const Chat = ({ user, onUserUpdate }) => {
                 )}
             </Dialog>
 
-            {/* Key Fingerprint Dialog */}
+            {/* Key Fingerprint Dialog - for viewing other users' keys */}
             <Dialog
-                open={showKeyFingerprintDialog}
+                open={showKeyFingerprintDialog && viewingKeyUser}
                 onClose={() => {
                     setShowKeyFingerprintDialog(false);
                     setViewingKeyUser(null);

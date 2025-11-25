@@ -86,6 +86,30 @@ async function deriveSeed(passphrase, googleId) {
 }
 
 /**
+ * Preview the public key JWK from passphrase + googleId (without storing)
+ * Used for live fingerprint preview in the UI
+ */
+export async function previewPublicKey(passphrase, googleId) {
+    if (!passphrase || !googleId) return null;
+    
+    const seed = await deriveSeed(passphrase, googleId);
+    const keyPair = ec.keyFromPrivate(seed);
+    const publicKeyHex = keyPair.getPublic('hex');
+    
+    // Convert to JWK format for KeyFingerprint component
+    const publicKeyBytes = new Uint8Array(hex2ab(publicKeyHex));
+    const x = publicKeyBytes.slice(1, 33);
+    const y = publicKeyBytes.slice(33, 65);
+    
+    return {
+        kty: "EC",
+        crv: "P-256",
+        x: arrayBufferToBase64Url(x),
+        y: arrayBufferToBase64Url(y),
+    };
+}
+
+/**
  * Generate deterministic ECDH key pair from passphrase + googleId
  */
 export async function generateAndStoreKeys(passphrase, googleId) {
