@@ -132,7 +132,7 @@ Verify the integrity of deployed files by comparing SHA-256 hashes:
 **Bookmarklet:** Create a bookmark with this URL to verify anytime:
 
 ```
-javascript:(async()=>{const R='https://raw.githubusercontent.com/sebseb7/chatApp/refs/heads/main/README.md',B='https://c.growheads.de',F=['index.html','bundle.js','sw.js'];try{const r=await(await fetch(R)).text(),h={};r.replace(/`([^`]+)`\s*\|\s*`sha256-([^`]+)`/g,(m,f,v)=>F.includes(f)&&(h[f]=v));const s=async u=>{const d=await(await fetch(u)).arrayBuffer(),b=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(b)))};let o='ChatApp Build Verification\n\n';for(const f of F){const a=await s(`${B}/${f}`),e=h[f],m=a===e;o+=`${m?'✅':'❌'} ${f}: ${m?'MATCH':'MISMATCH'}\n`}alert(o)}catch(e){alert('Error: '+e.message)}})()
+javascript:(async()=>{const R='https://raw.githubusercontent.com/sebseb7/chatApp/refs/heads/main/README.md?'+Date.now(),B='https://c.growheads.de',F=['index.html','bundle.js','sw.js'];try{const r=await(await fetch(R)).text(),h={};r.replace(/`([^`]+)`\s*\|\s*`sha256-([^`]+)`/g,(m,f,v)=>F.includes(f)&&(h[f]=v));const s=async u=>{const d=await(await fetch(u)).arrayBuffer(),b=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(b)))};let o='ChatApp Build Verification\n\n';for(const f of F){const a=await s(`${B}/${f}`),e=h[f],m=a===e;o+=`${m?'✅':'❌'} ${f}: ${m?'MATCH':'MISMATCH'}\n`}alert(o)}catch(e){alert('Error: '+e.message)}})()
 ```
 
 ## License
