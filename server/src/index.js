@@ -197,6 +197,56 @@ initDB().then(db => {
         }
     });
 
+    // Delete account endpoint
+    app.delete('/api/account', async (req, res) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+
+        try {
+            const userId = req.user.id;
+
+            // Delete custom avatar file if exists
+            const user = await db.get('SELECT customAvatar FROM users WHERE id = ?', userId);
+            if (user && user.customAvatar) {
+                const avatarPath = path.join(uploadsDir, path.basename(user.customAvatar));
+                if (fs.existsSync(avatarPath)) {
+                    fs.unlinkSync(avatarPath);
+                }
+            }
+
+            // Delete user's group memberships
+            await db.run('DELETE FROM group_members WHERE userId = ?', userId);
+
+            // Delete user's undelivered messages
+            await db.run('DELETE FROM messages WHERE senderId = ? OR receiverId = ?', userId, userId);
+
+            // Delete message reads by this user
+            await db.run('DELETE FROM message_reads WHERE userId = ?', userId);
+
+            // Delete message deliveries for this user
+            await db.run('DELETE FROM message_deliveries WHERE userId = ?', userId);
+
+            // Delete the user
+            await db.run('DELETE FROM users WHERE id = ?', userId);
+
+            // Notify connected clients
+            io.emit('user_deleted', { userId });
+
+            // Logout
+            req.logout((err) => {
+                if (err) {
+                    console.error('Error logging out after delete:', err);
+                }
+                res.json({ success: true });
+            });
+
+        } catch (err) {
+            console.error('Error deleting account:', err);
+            res.status(500).json({ error: 'Failed to delete account' });
+        }
+    });
+
     const configureSocket = require('./socket');
 
     configureSocket(io, db);

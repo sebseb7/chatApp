@@ -17,6 +17,7 @@ import {
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import RestoreIcon from '@mui/icons-material/Restore';
 import LockIcon from '@mui/icons-material/Lock';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import KeyFingerprint from './KeyFingerprint';
 
 class ProfileSettings extends Component {
@@ -182,6 +183,49 @@ class ProfileSettings extends Component {
         }
     };
 
+    handleDeleteAccount = async () => {
+        const confirmText = 'DELETE';
+        const userInput = window.prompt(
+            `This will permanently delete your account and all associated data.\n\n` +
+            `This action cannot be undone!\n\n` +
+            `Type "${confirmText}" to confirm:`
+        );
+
+        if (userInput !== confirmText) {
+            if (userInput !== null) {
+                alert('Account deletion cancelled. Text did not match.');
+            }
+            return;
+        }
+
+        this.setState({ loading: true, error: null });
+
+        try {
+            const response = await fetch('/api/account', {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to delete account');
+            }
+
+            // Clear local storage and session storage
+            localStorage.removeItem('chat_e2ee_keys');
+            sessionStorage.removeItem('chat_e2ee_passphrase');
+
+            // Redirect to logout/home
+            window.location.href = '/';
+
+        } catch (err) {
+            this.setState({ 
+                error: err.message || 'Failed to delete account', 
+                loading: false 
+            });
+        }
+    };
+
     render() {
         const { open, onClose, user } = this.props;
         const { customName, avatarPreview, loading, error, success } = this.state;
@@ -336,6 +380,35 @@ class ProfileSettings extends Component {
                             </Box>
                         </>
                     )}
+
+                    {/* Danger Zone - Delete Account */}
+                    <Divider sx={{ my: 2 }} />
+                    <Box sx={{ 
+                        p: 2, 
+                        borderRadius: 2, 
+                        backgroundColor: 'rgba(255, 0, 0, 0.05)',
+                        border: '1px solid rgba(255, 82, 82, 0.3)'
+                    }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                            <DeleteForeverIcon color="error" fontSize="small" />
+                            <Typography variant="subtitle2" color="error">
+                                Danger Zone
+                            </Typography>
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                            Permanently delete your account and all associated data. This action cannot be undone.
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteForeverIcon />}
+                            onClick={this.handleDeleteAccount}
+                            disabled={loading}
+                            size="small"
+                        >
+                            Delete Account
+                        </Button>
+                    </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0, 217, 255, 0.1)' }}>
                     <Button onClick={onClose} disabled={loading}>

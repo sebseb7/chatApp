@@ -5,20 +5,20 @@ import Login from './components/Login';
 import Chat from './components/Chat';
 import { SocketProvider } from './context/SocketContext';
 
-// Custom dark green-blueish theme
+// Custom dark green-blueish theme with high contrast buttons
 const theme = createTheme({
     palette: {
         mode: 'dark',
         primary: {
-            main: '#0f4c5c',
-            light: '#1a6b7e',
-            dark: '#0a2e36',
-            contrastText: '#e8f4f8',
+            main: '#26c6da', // Cyan 400 - Bright and visible
+            light: '#6ff9ff',
+            dark: '#0095a8',
+            contrastText: '#000000',
         },
         secondary: {
-            main: '#00d9ff',
-            light: '#4de4ff',
-            dark: '#00a8cc',
+            main: '#00e5ff', // Cyan A400
+            light: '#6effff',
+            dark: '#00b2cc',
         },
         background: {
             default: '#0d1b1e',
@@ -61,12 +61,20 @@ const theme = createTheme({
             styleOverrides: {
                 root: {
                     textTransform: 'none',
-                    fontWeight: 500,
+                    fontWeight: 600,
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
                         transform: 'translateY(-2px)',
-                        boxShadow: '0 4px 16px rgba(0, 217, 255, 0.3)',
+                        boxShadow: '0 4px 16px rgba(38, 198, 218, 0.3)',
                     },
+                },
+                text: {
+                    color: '#26c6da', // Explicitly bright cyan for text buttons
+                },
+                containedPrimary: {
+                    background: 'linear-gradient(45deg, #00acc1 30%, #26c6da 90%)',
+                    color: '#000000', // Black text on bright button
+                    fontWeight: 700,
                 },
             },
         },
@@ -130,7 +138,7 @@ const App = () => {
                         background: 'linear-gradient(135deg, #0d1b1e 0%, #1a2f35 100%)',
                     }}
                 >
-                    <CircularProgress size={60} sx={{ color: '#00d9ff' }} />
+                    <CircularProgress size={60} sx={{ color: '#26c6da' }} />
                 </Box>
             </ThemeProvider>
         );
@@ -144,8 +152,8 @@ const App = () => {
                     <Route path="/" element={
                         user ? (
                             <SocketProvider user={user}>
-                                <Chat 
-                                    user={user} 
+                                <Chat
+                                    user={user}
                                     onUserUpdate={(updatedUser) => setUser(updatedUser)}
                                 />
                             </SocketProvider>
