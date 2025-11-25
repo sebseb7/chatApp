@@ -87,6 +87,26 @@ async function initDB() {
     await db.exec('ALTER TABLE users ADD COLUMN customAvatar TEXT');
   } catch (e) { /* Column likely exists */ }
 
+  // Migration for E2EE public key storage
+  try {
+    await db.exec('ALTER TABLE users ADD COLUMN publicKey TEXT');
+  } catch (e) { /* Column likely exists */ }
+
+  // Migration for storing senderPublicKey with messages (for E2EE history decryption)
+  try {
+    await db.exec('ALTER TABLE messages ADD COLUMN senderPublicKey TEXT');
+  } catch (e) { /* Column likely exists */ }
+
+  // Migration for storing receiverPublicKey (so sender can decrypt their own sent messages in history)
+  try {
+    await db.exec('ALTER TABLE messages ADD COLUMN receiverPublicKey TEXT');
+  } catch (e) { /* Column likely exists */ }
+
+  // Migration for tracking message delivery status
+  try {
+    await db.exec('ALTER TABLE messages ADD COLUMN delivered INTEGER DEFAULT 0');
+  } catch (e) { /* Column likely exists */ }
+
   return db;
 }
 

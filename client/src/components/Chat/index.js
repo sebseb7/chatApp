@@ -1,5 +1,6 @@
 import React, { Component, createRef } from 'react';
-import { Box, Paper, Typography, Snackbar, Alert } from '@mui/material';
+import { Box, Paper, Typography, Snackbar, Alert, Button, CircularProgress, useTheme, useMediaQuery } from '@mui/material';
+import HistoryIcon from '@mui/icons-material/History';
 import { ChatProvider, ChatContext, ensureAudioContext } from './ChatContext';
 import { useSocket } from '../../context/SocketContext';
 import UserList from './UserList';
@@ -20,11 +21,42 @@ class ChatInner extends Component {
     constructor(props) {
         super(props);
         this.messagesEndRef = createRef();
+        this.messagesContainerRef = createRef();
+        this.prevMessageCount = 0;
+        this.prevSelectedUser = null;
     }
     
     componentDidUpdate(prevProps, prevState) {
-        // Scroll to bottom when messages change
-        this.scrollToBottom();
+        const { selectedUser, messages } = this.context;
+        const filteredMessages = this.context.getFilteredMessages();
+        
+        // If we selected a new user, scroll to bottom
+        if (selectedUser !== this.prevSelectedUser) {
+            this.prevSelectedUser = selectedUser;
+            this.prevMessageCount = filteredMessages.length;
+            this.scrollToBottom();
+            return;
+        }
+        
+        // If new messages were added at the end (not loaded history), scroll to bottom
+        // History loads prepend messages, so count increases but we shouldn't scroll
+        if (filteredMessages.length > this.prevMessageCount) {
+            const isHistoryLoad = this.context.loadingHistory === false && 
+                                  this.prevMessageCount > 0 &&
+                                  filteredMessages.length - this.prevMessageCount <= 10;
+            
+            // Only scroll to bottom for new incoming/sent messages, not history loads
+            // Check if the newest message ID is actually new
+            const prevNewestId = this.prevNewestMsgId;
+            const currentNewestId = filteredMessages.length > 0 ? filteredMessages[filteredMessages.length - 1].id : null;
+            
+            if (currentNewestId !== prevNewestId) {
+                this.scrollToBottom();
+            }
+        }
+        
+        this.prevMessageCount = filteredMessages.length;
+        this.prevNewestMsgId = filteredMessages.length > 0 ? filteredMessages[filteredMessages.length - 1].id : null;
     }
     
     scrollToBottom = () => {
@@ -41,22 +73,54 @@ class ChatInner extends Component {
             onUserUpdate,
             setShowProfileDialog,
             getFilteredMessages,
-            users
+            users,
+            hasMoreHistory,
+            loadingHistory,
+            loadMoreHistory
         } = this.context;
         
         const filteredMessages = getFilteredMessages();
         const currentUser = users.find(u => u.id === user.id) || user;
+        const chatKey = selectedUser?.id;
+        const canLoadMore = chatKey && hasMoreHistory[chatKey] !== false;
+        const { isMobile } = this.context;
         
         return (
             <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }} onClick={ensureAudioContext}>
                 <UserList />
                 
-                <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
+                <Box component="main" sx={{ 
+                    flexGrow: 1, 
+                    p: isMobile ? 1 : 3, 
+                    display: isMobile && !selectedUser ? 'none' : 'flex', 
+                    flexDirection: 'column',
+                    height: '100dvh',
+                    width: isMobile ? '100%' : 'auto'
+                }}>
                     {selectedUser ? (
                         <>
                             <ChatHeader />
                             
-                            <Paper sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto' }}>
+                            <Paper ref={this.messagesContainerRef} sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto' }}>
+                                {/* Load older messages button */}
+                                {canLoadMore && filteredMessages.length > 0 && (
+                                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={loadMoreHistory}
+                                            disabled={loadingHistory}
+                                            startIcon={loadingHistory ? <CircularProgress size={16} /> : <HistoryIcon />}
+                                            sx={{ 
+                                                borderColor: 'rgba(0, 217, 255, 0.3)',
+                                                '&:hover': { borderColor: 'rgba(0, 217, 255, 0.6)' }
+                                            }}
+                                        >
+                                            {loadingHistory ? 'Loading...' : 'Load older messages'}
+                                        </Button>
+                                    </Box>
+                                )}
+                                
                                 {filteredMessages.map((msg, index) => (
                                     <Message key={msg.id || index} msg={msg} />
                                 ))}
@@ -114,7 +178,7 @@ class ChatInner extends Component {
 // This is needed because ChatProvider is a class component that can't use hooks
 class Chat extends Component {
     render() {
-        const { user, onUserUpdate, socket, isConnected } = this.props;
+        const { user, onUserUpdate, socket, isConnected, isMobile } = this.props;
         
         return (
             <ChatProvider 
@@ -122,6 +186,7 @@ class Chat extends Component {
                 onUserUpdate={onUserUpdate}
                 socket={socket}
                 isConnected={isConnected}
+                isMobile={isMobile}
             >
                 <ChatInner />
             </ChatProvider>
@@ -129,11 +194,13 @@ class Chat extends Component {
     }
 }
 
-// HOC to inject socket hook into class component
+// HOC to inject socket hook and media query into class component
 function withSocket(WrappedComponent) {
     return function WithSocketWrapper(props) {
         const { socket, isConnected } = useSocket();
-        return <WrappedComponent {...props} socket={socket} isConnected={isConnected} />;
+        const theme = useTheme();
+        const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+        return <WrappedComponent {...props} socket={socket} isConnected={isConnected} isMobile={isMobile} />;
     };
 }
 

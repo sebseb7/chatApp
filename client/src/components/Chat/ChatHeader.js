@@ -1,7 +1,9 @@
 import React, { Component } from 'react';
-import { Box, Typography, Button, Avatar, Chip, FormControlLabel, Switch } from '@mui/material';
+import { Box, Typography, Button, Avatar, Chip, FormControlLabel, Switch, Tooltip, IconButton } from '@mui/material';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import LockIcon from '@mui/icons-material/Lock';
 import { ChatContext } from './ChatContext';
 
@@ -20,14 +22,23 @@ class ChatHeader extends Component {
             setIsE2EEEnabled,
             leaveGroup,
             toggleUserMute,
-            removeFromGroup
+            removeFromGroup,
+            deleteAllMessages,
+            isMobile,
+            setSelectedUser
         } = this.context;
         
         if (!selectedUser) return null;
         
         return (
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Box>
+                <Box display="flex" alignItems="center" gap={1}>
+                    {isMobile && (
+                        <IconButton onClick={() => setSelectedUser(null)} edge="start" color="inherit">
+                            <ArrowBackIcon />
+                        </IconButton>
+                    )}
+                    <Box>
                     <Typography variant="h5">
                         {selectedUser.isGroup && selectedUser.isPublic 
                             ? selectedUser.name 
@@ -61,6 +72,7 @@ class ChatHeader extends Component {
                             )}
                         </Box>
                     )}
+                    </Box>
                 </Box>
                 <Box display="flex" alignItems="center" gap={1}>
                     {!selectedUser.isGroup && (
@@ -81,6 +93,16 @@ class ChatHeader extends Component {
                             }
                         />
                     )}
+                    <Tooltip title={selectedUser.isGroup ? "Delete all YOUR messages in this group" : "Delete all messages in this chat"}>
+                        <Button
+                            color="error"
+                            size="small"
+                            startIcon={<DeleteSweepIcon />}
+                            onClick={deleteAllMessages}
+                        >
+                            {selectedUser.isGroup ? "Delete My Messages" : "Delete All"}
+                        </Button>
+                    </Tooltip>
                     {selectedUser.isGroup && !selectedUser.isPublic && (
                         <Button
                             color="error"

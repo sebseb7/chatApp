@@ -91,11 +91,18 @@ class MessageInput extends Component {
                 addMessage(optimisticMsg);
             }
             
+            // Get receiver's public key in JWK format for storage (so sender can decrypt history)
+            let receiverPublicKey = null;
+            if (type === 'eee' && selectedUser.publicKey) {
+                receiverPublicKey = selectedUser.publicKey;
+            }
+            
             socket.emit('send_message', {
                 receiverId: selectedUser.id,
                 content,
                 type,
                 senderPublicKey,
+                receiverPublicKey,
                 tempId
             });
         }

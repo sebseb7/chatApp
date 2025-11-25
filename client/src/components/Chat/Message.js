@@ -1,7 +1,8 @@
 import React, { Component } from 'react';
-import { Box, Paper, Avatar, Typography, Tooltip } from '@mui/material';
+import { Box, Paper, Avatar, Typography, Tooltip, IconButton } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ReactMarkdown from 'react-markdown';
 import { ChatContext } from './ChatContext';
 
@@ -12,11 +13,14 @@ class Message extends Component {
         const { msg } = this.props;
         const { 
             user, 
-            decryptedMessages, 
+            decryptedMessages,
+            decryptionFailed,
             readReceipts, 
             deliveryStatus,
             handleSenderClick,
-            setFullscreenImage
+            setFullscreenImage,
+            deleteMessage,
+            selectedUser
         } = this.context;
         
         // System message
@@ -32,20 +36,36 @@ class Message extends Component {
         
         let displayContent = msg.content;
         const isEncrypted = msg.type === 'eee';
+        const { keyPair } = this.context;
         
         if (isEncrypted) {
             if (msg.senderId === user.id && msg.isOptimistic) {
                 displayContent = msg.content;
-            } else if (msg.senderId === user.id) {
-                displayContent = decryptedMessages[msg.id] || "🔒 Encrypted Message";
+            } else if (decryptedMessages[msg.id]) {
+                displayContent = decryptedMessages[msg.id];
+            } else if (!keyPair) {
+                displayContent = "🔒 Encrypted Message (enter your keys to decrypt)";
+            } else if (decryptionFailed[msg.id]) {
+                const reason = decryptionFailed[msg.id];
+                if (reason === 'OperationError') {
+                    displayContent = "🔒 Encrypted Message (decryption failed - keys don't match)";
+                } else if (reason === 'missing_key') {
+                    displayContent = "🔒 Encrypted Message (missing sender's key)";
+                } else {
+                    displayContent = `🔒 Encrypted Message (decryption failed: ${reason})`;
+                }
             } else {
-                displayContent = decryptedMessages[msg.id] || "🔒 Encrypted Message (Decrypting...)";
+                displayContent = "🔒 Encrypted Message";
             }
         }
         
         const isOwnMessage = msg.senderId === user.id;
         const readers = readReceipts[msg.id] || [];
         const deliveryState = deliveryStatus[msg.id];
+        
+        // Can delete: own messages always, or any message in P2P chat (not group)
+        const isGroupChat = selectedUser?.isGroup;
+        const canDelete = isOwnMessage || !isGroupChat;
         
         return (
             <Box sx={{
@@ -110,6 +130,21 @@ class Message extends Component {
                                     {new Date(msg.timestamp).toLocaleTimeString()}
                                 </Typography>
                             </Box>
+                            {canDelete && (
+                                <Tooltip title="Delete message">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => deleteMessage(msg.id)}
+                                        sx={{ 
+                                            p: 0.25,
+                                            opacity: 0.5,
+                                            '&:hover': { opacity: 1, color: 'error.main' }
+                                        }}
+                                    >
+                                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
                         </Box>
                     </Paper>
                     

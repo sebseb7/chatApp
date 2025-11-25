@@ -66,6 +66,7 @@ export class ChatProvider extends Component {
             hasStoredKeys: false,
             peerPublicKeys: {},
             decryptedMessages: {},
+            decryptionFailed: {}, // Track messages that failed to decrypt
             myPublicKeyJwk: null,
             previewKeyJwk: null,
             isE2EEEnabled: false,
@@ -82,6 +83,10 @@ export class ChatProvider extends Component {
             // Group creation form
             newGroupName: '',
             newGroupIsPublic: false,
+            
+            // History loading state
+            hasMoreHistory: {},  // { oderId/groupId: boolean }
+            loadingHistory: false,
         };
         
         this.selectedUserRef = { current: null };
@@ -137,14 +142,23 @@ export class ChatProvider extends Component {
         if (this.state.selectedUser?.isGroup && 
             (!prevState.selectedUser?.isGroup || prevState.selectedUser?.id !== this.state.selectedUser?.id)) {
             this.props.socket?.emit('get_group_members', { groupId: this.state.selectedUser.id });
-            this.setState({ isE2EEEnabled: false });
+            this.setState({ isE2EEEnabled: false }); // E2EE not supported for groups
         } else if (this.state.selectedUser && !this.state.selectedUser.isGroup && 
                    prevState.selectedUser !== this.state.selectedUser) {
-            this.setState({ groupMembers: [], isE2EEEnabled: false });
+            // For P2P chats, enable E2EE by default if both users have keys
+            const hasPeerKey = !!this.state.peerPublicKeys[this.state.selectedUser.id];
+            const canEnableE2EE = !!this.state.keyPair && hasPeerKey;
+            this.setState({ groupMembers: [], isE2EEEnabled: canEnableE2EE });
         }
         
         // Mark messages as read
         this.markMessagesAsRead();
+        
+        // Retry decryption when keys become available
+        if ((prevState.keyPair !== this.state.keyPair && this.state.keyPair) ||
+            (prevState.peerPublicKeys !== this.state.peerPublicKeys)) {
+            this.retryDecryption();
+        }
     }
     
     componentWillUnmount() {
@@ -214,6 +228,9 @@ export class ChatProvider extends Component {
         socket.on('receive_message', this.handleReceiveMessage);
         socket.on('message_read_update', this.handleMessageReadUpdate);
         socket.on('delivery_update', this.handleDeliveryUpdate);
+        socket.on('history_loaded', this.handleHistoryLoaded);
+        socket.on('message_deleted', this.handleMessageDeleted);
+        socket.on('messages_deleted_bulk', this.handleMessagesDeletedBulk);
         
         socket.emit('get_groups');
         
@@ -235,6 +252,9 @@ export class ChatProvider extends Component {
         socket.off('receive_message', this.handleReceiveMessage);
         socket.off('message_read_update', this.handleMessageReadUpdate);
         socket.off('delivery_update', this.handleDeliveryUpdate);
+        socket.off('history_loaded', this.handleHistoryLoaded);
+        socket.off('message_deleted', this.handleMessageDeleted);
+        socket.off('messages_deleted_bulk', this.handleMessagesDeletedBulk);
     };
     
     handleUserList = async (userList) => {
@@ -299,10 +319,27 @@ export class ChatProvider extends Component {
                         decryptedMessages: { ...prev.decryptedMessages, [message.id]: decrypted }
                     }));
                 } else {
-                    console.warn("Missing public key for message", message.id);
+                    console.error("Missing public key for message", message.id, {
+                        senderId: message.senderId,
+                        receiverId: message.receiverId,
+                        myId: this.props.user.id,
+                        availablePeerKeys: Object.keys(this.state.peerPublicKeys)
+                    });
+                    this.setState(prev => ({
+                        decryptionFailed: { ...prev.decryptionFailed, [message.id]: 'missing_key' }
+                    }));
                 }
             } catch (e) {
-                console.error("Decryption failed", e);
+                console.error("Decryption failed for message", message.id, e.name, e.message, {
+                    senderId: message.senderId,
+                    receiverId: message.receiverId,
+                    myId: this.props.user.id,
+                    hasSenderPublicKey: !!message.senderPublicKey,
+                    hasReceiverPublicKey: !!message.receiverPublicKey
+                });
+                this.setState(prev => ({
+                    decryptionFailed: { ...prev.decryptionFailed, [message.id]: e.name || 'unknown' }
+                }));
             }
         }
         
@@ -362,6 +399,108 @@ export class ChatProvider extends Component {
         }));
     };
     
+    handleHistoryLoaded = async ({ messages, oderId, groupId, hasMore }) => {
+        const chatKey = groupId || oderId;
+        
+        // Decrypt E2EE messages
+        const decryptedUpdates = {};
+        const failedUpdates = {};
+        for (const message of messages) {
+            if (message.type === 'eee' && this.state.keyPair) {
+                try {
+                    let otherKey;
+                    if (message.senderId === this.props.user.id) {
+                        // I sent this message - need receiver's key to decrypt
+                        otherKey = this.state.peerPublicKeys[message.receiverId];
+                        // Use stored receiverPublicKey if peer key not available
+                        if (!otherKey && message.receiverPublicKey) {
+                            otherKey = await importPublicKey(message.receiverPublicKey);
+                            this.setState(prev => ({
+                                peerPublicKeys: { ...prev.peerPublicKeys, [message.receiverId]: otherKey }
+                            }));
+                        }
+                    } else {
+                        // I received this message - need sender's key to decrypt
+                        otherKey = this.state.peerPublicKeys[message.senderId];
+                        if (!otherKey && message.senderPublicKey) {
+                            otherKey = await importPublicKey(message.senderPublicKey);
+                            this.setState(prev => ({
+                                peerPublicKeys: { ...prev.peerPublicKeys, [message.senderId]: otherKey }
+                            }));
+                        }
+                    }
+                    
+                    if (otherKey) {
+                        const decrypted = await decryptMessage(JSON.parse(message.content), this.state.keyPair.privateKey, otherKey);
+                        decryptedUpdates[message.id] = decrypted;
+                    } else {
+                        console.error("Missing public key for history message", message.id, {
+                            senderId: message.senderId,
+                            receiverId: message.receiverId,
+                            myId: this.props.user.id,
+                            availablePeerKeys: Object.keys(this.state.peerPublicKeys),
+                            hasSenderPublicKey: !!message.senderPublicKey,
+                            hasReceiverPublicKey: !!message.receiverPublicKey
+                        });
+                        failedUpdates[message.id] = 'missing_key';
+                    }
+                } catch (e) {
+                    console.error("Decryption failed for history message", message.id, e.name, e.message, {
+                        senderId: message.senderId,
+                        receiverId: message.receiverId,
+                        myId: this.props.user.id,
+                        hasSenderPublicKey: !!message.senderPublicKey,
+                        hasReceiverPublicKey: !!message.receiverPublicKey
+                    });
+                    failedUpdates[message.id] = e.name || 'unknown';
+                }
+            }
+        }
+        
+        this.setState(prev => {
+            // Prepend history messages, avoiding duplicates
+            const existingIds = new Set(prev.messages.map(m => m.id));
+            const newMessages = messages.filter(m => !existingIds.has(m.id));
+            
+            return {
+                messages: [...newMessages, ...prev.messages],
+                hasMoreHistory: { ...prev.hasMoreHistory, [chatKey]: hasMore },
+                loadingHistory: false,
+                decryptedMessages: { ...prev.decryptedMessages, ...decryptedUpdates },
+                decryptionFailed: { ...prev.decryptionFailed, ...failedUpdates }
+            };
+        });
+    };
+    
+    handleMessageDeleted = ({ messageId, groupId, oderId }) => {
+        this.setState(prev => ({
+            messages: prev.messages.filter(m => m.id !== messageId)
+        }));
+    };
+    
+    handleMessagesDeletedBulk = ({ groupId, oderId }) => {
+        this.setState(prev => {
+            const deleterId = oderId; // The user who deleted
+            let filteredMessages;
+            
+            if (groupId) {
+                // In groups, only the deleter's messages are removed
+                filteredMessages = prev.messages.filter(m => 
+                    !(m.groupId === groupId && m.senderId === deleterId)
+                );
+            } else {
+                // In P2P, all messages between current user and the other user are removed
+                const myId = this.props.user.id;
+                filteredMessages = prev.messages.filter(m => 
+                    !((m.senderId === myId && m.receiverId === deleterId) ||
+                      (m.senderId === deleterId && m.receiverId === myId))
+                );
+            }
+            
+            return { messages: filteredMessages };
+        });
+    };
+    
     markMessagesAsRead = () => {
         const { selectedUser, messages, readReceipts } = this.state;
         const { socket, user } = this.props;
@@ -390,6 +529,60 @@ export class ChatProvider extends Component {
         });
     };
     
+    // Retry decryption for messages that failed (e.g., keys weren't loaded yet)
+    retryDecryption = async () => {
+        const { messages, decryptedMessages, decryptionFailed, keyPair, peerPublicKeys } = this.state;
+        if (!keyPair) return;
+        
+        const decryptedUpdates = {};
+        const failedUpdates = {};
+        
+        for (const message of messages) {
+            // Skip if already decrypted or not E2EE
+            if (message.type !== 'eee' || decryptedMessages[message.id]) continue;
+            // Skip if already permanently failed (OperationError means wrong keys, won't change)
+            if (decryptionFailed[message.id] === 'OperationError') continue;
+            
+            try {
+                let otherKey;
+                if (message.senderId === this.props.user.id) {
+                    // I sent this message - need receiver's key
+                    otherKey = peerPublicKeys[message.receiverId];
+                    if (!otherKey && message.receiverPublicKey) {
+                        otherKey = await importPublicKey(message.receiverPublicKey);
+                        this.setState(prev => ({
+                            peerPublicKeys: { ...prev.peerPublicKeys, [message.receiverId]: otherKey }
+                        }));
+                    }
+                } else {
+                    // I received this message - need sender's key
+                    otherKey = peerPublicKeys[message.senderId];
+                    if (!otherKey && message.senderPublicKey) {
+                        otherKey = await importPublicKey(message.senderPublicKey);
+                        this.setState(prev => ({
+                            peerPublicKeys: { ...prev.peerPublicKeys, [message.senderId]: otherKey }
+                        }));
+                    }
+                }
+                
+                if (otherKey) {
+                    const decrypted = await decryptMessage(JSON.parse(message.content), keyPair.privateKey, otherKey);
+                    decryptedUpdates[message.id] = decrypted;
+                }
+            } catch (e) {
+                console.error("Retry decryption failed for message", message.id, e.name, e.message);
+                failedUpdates[message.id] = e.name || 'unknown';
+            }
+        }
+        
+        if (Object.keys(decryptedUpdates).length > 0 || Object.keys(failedUpdates).length > 0) {
+            this.setState(prev => ({
+                decryptedMessages: { ...prev.decryptedMessages, ...decryptedUpdates },
+                decryptionFailed: { ...prev.decryptionFailed, ...failedUpdates }
+            }));
+        }
+    };
+    
     // Actions
     setSelectedUser = (user) => {
         this.setState({ 
@@ -399,6 +592,20 @@ export class ChatProvider extends Component {
                 [user?.id]: 0
             }
         });
+        
+        // Load initial history for this chat
+        if (user && this.props.socket) {
+            const chatKey = user.isGroup ? user.id : user.id;
+            // Only load if we haven't loaded for this chat yet
+            if (this.state.hasMoreHistory[chatKey] === undefined) {
+                this.setState({ loadingHistory: true });
+                if (user.isGroup) {
+                    this.props.socket.emit('load_history', { groupId: user.id, limit: 10 });
+                } else {
+                    this.props.socket.emit('load_history', { oderId: user.id, limit: 10 });
+                }
+            }
+        }
     };
     
     setInput = (input) => {
@@ -496,6 +703,8 @@ export class ChatProvider extends Component {
                 showPassphraseDialog: true
             });
             sessionStorage.removeItem("chat_e2ee_passphrase");
+            // Clear server-side stored public key
+            this.props.socket?.emit('clear_public_key');
         }
     };
     
@@ -580,6 +789,49 @@ export class ChatProvider extends Component {
         });
     };
     
+    loadMoreHistory = () => {
+        const { selectedUser, messages, loadingHistory } = this.state;
+        const { socket } = this.props;
+        
+        if (!selectedUser || !socket || loadingHistory) return;
+        
+        // Find the oldest message ID for this chat
+        const chatMessages = this.getFilteredMessages();
+        if (chatMessages.length === 0) return;
+        
+        const oldestId = Math.min(...chatMessages.map(m => m.id));
+        
+        this.setState({ loadingHistory: true });
+        
+        if (selectedUser.isGroup) {
+            socket.emit('load_history', { groupId: selectedUser.id, beforeId: oldestId, limit: 10 });
+        } else {
+            socket.emit('load_history', { oderId: selectedUser.id, beforeId: oldestId, limit: 10 });
+        }
+    };
+    
+    deleteMessage = (messageId) => {
+        if (!window.confirm('Delete this message?')) return;
+        this.props.socket?.emit('delete_message', { messageId });
+    };
+    
+    deleteAllMessages = () => {
+        const { selectedUser } = this.state;
+        if (!selectedUser) return;
+        
+        const confirmMsg = selectedUser.isGroup 
+            ? 'Delete all YOUR messages in this group? This cannot be undone.'
+            : 'Delete ALL messages in this conversation? This cannot be undone.';
+        
+        if (!window.confirm(confirmMsg)) return;
+        
+        if (selectedUser.isGroup) {
+            this.props.socket?.emit('delete_all_messages', { groupId: selectedUser.id });
+        } else {
+            this.props.socket?.emit('delete_all_messages', { oderId: selectedUser.id });
+        }
+    };
+    
     render() {
         const value = {
             ...this.state,
@@ -587,6 +839,7 @@ export class ChatProvider extends Component {
             socket: this.props.socket,
             isConnected: this.props.isConnected,
             onUserUpdate: this.props.onUserUpdate,
+            isMobile: this.props.isMobile,
             
             // Actions
             setSelectedUser: this.setSelectedUser,
@@ -613,6 +866,9 @@ export class ChatProvider extends Component {
             deleteGroup: this.deleteGroup,
             handleSenderClick: this.handleSenderClick,
             getFilteredMessages: this.getFilteredMessages,
+            loadMoreHistory: this.loadMoreHistory,
+            deleteMessage: this.deleteMessage,
+            deleteAllMessages: this.deleteAllMessages,
         };
         
         return (

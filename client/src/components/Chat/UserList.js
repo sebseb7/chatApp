@@ -45,15 +45,17 @@ class UserList extends Component {
         } = this.context;
         
         const currentUser = users.find(u => u.id === user.id) || user;
+        const { isMobile } = this.context;
         
         return (
             <Drawer
                 variant="permanent"
                 sx={{
-                    width: { xs: 280, sm: drawerWidth },
+                    width: isMobile ? '100%' : drawerWidth,
                     flexShrink: 0,
+                    display: isMobile && selectedUser ? 'none' : 'block',
                     [`& .MuiDrawer-paper`]: {
-                        width: { xs: 280, sm: drawerWidth },
+                        width: isMobile ? '100%' : drawerWidth,
                         boxSizing: 'border-box',
                         background: 'linear-gradient(180deg, #152428 0%, #0f1f23 100%)',
                     },

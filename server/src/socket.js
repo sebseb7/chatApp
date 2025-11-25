@@ -33,33 +33,25 @@ module.exports = function (io, db) {
                     const displayName = user.customName || user.name;
                     console.log(`User ${displayName} (${userId}) joined.`);
 
-                    const missedDMs = await db.all(`
+                    // Find undelivered messages and mark them as delivered
+                    const undeliveredDMs = await db.all(`
                         SELECT m.*, 
                                COALESCE(u.customName, u.name) as senderName, 
                                COALESCE(u.customAvatar, u.avatar) as senderAvatar
                         FROM messages m
                         JOIN users u ON m.senderId = u.id
-                        WHERE m.receiverId = ? 
+                        WHERE m.receiverId = ? AND m.delivered = 0
                     `, userId);
 
-                    // Sort by timestamp
-                    const allMissed = missedDMs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-                    for (const msg of allMissed) {
-                        socket.emit('receive_message', msg);
-
-                        // Mark as delivered and DELETE from DB
-                        // We don't need message_deliveries table anymore for persistence if we delete.
-                        // But we might want to notify sender?
-                        // If sender is online, notify.
-
+                    for (const msg of undeliveredDMs) {
+                        // Mark as delivered in DB
+                        await db.run('UPDATE messages SET delivered = 1 WHERE id = ?', msg.id);
+                        
+                        // Notify sender if online
                         const senderData = onlineUsers.get(msg.senderId);
                         if (senderData) {
-                            io.to(senderData.socketId).emit('delivery_update', { messageId: msg.id, userId });
+                            io.to(senderData.socketId).emit('delivery_update', { messageId: msg.id, oderId: msg.receiverId });
                         }
-
-                        // DELETE message
-                        await db.run('DELETE FROM messages WHERE id = ?', msg.id);
                     }
 
                 }
@@ -74,6 +66,20 @@ module.exports = function (io, db) {
             if (userData) {
                 userData.publicKey = publicKey;
                 onlineUsers.set(socket.userId, userData);
+                // Persist to database so offline users' fingerprints are still viewable
+                await db.run('UPDATE users SET publicKey = ? WHERE id = ?', JSON.stringify(publicKey), socket.userId);
+                await broadcastUserList();
+            }
+        });
+
+        socket.on('clear_public_key', async () => {
+            if (!socket.userId) return;
+            const userData = onlineUsers.get(socket.userId);
+            if (userData) {
+                userData.publicKey = null;
+                onlineUsers.set(socket.userId, userData);
+                // Clear from database
+                await db.run('UPDATE users SET publicKey = NULL WHERE id = ?', socket.userId);
                 await broadcastUserList();
             }
         });
@@ -125,7 +131,7 @@ module.exports = function (io, db) {
             }
         });
 
-        socket.on('send_message', async ({ receiverId, groupId, content, type = 'text', senderPublicKey, tempId }) => {
+        socket.on('send_message', async ({ receiverId, groupId, content, type = 'text', senderPublicKey, receiverPublicKey, tempId }) => {
             if (!socket.userId) return;
             try {
                 if (groupId) {
@@ -153,24 +159,30 @@ module.exports = function (io, db) {
                 const senderName = sender ? (sender.customName || sender.name) : 'Unknown';
                 const senderAvatar = sender ? (sender.customAvatar || sender.avatar) : null;
 
-                // Construct message object
-                // Note: We do NOT insert into DB yet.
-                const message = {
-                    id: Date.now(), // Temporary ID for ephemeral/RAM
-                    senderId: socket.userId,
-                    senderName,
-                    senderAvatar,
-                    receiverId,
-                    groupId,
-                    content,
-                    type,
-                    timestamp: new Date().toISOString(),
-                    senderPublicKey, // Pass through the key
-                    tempId // Pass through tempId for deduplication
-                };
+                // Serialize senderPublicKey for storage
+                const senderPublicKeyJson = senderPublicKey ? JSON.stringify(senderPublicKey) : null;
 
                 if (groupId) {
-                    // GROUP MESSAGE: Ephemeral, broadcast to online only.
+                    // GROUP MESSAGE: Store in DB and broadcast to online users
+                    const result = await db.run(
+                        'INSERT INTO messages (senderId, receiverId, groupId, content, type, senderPublicKey, delivered) VALUES (?, ?, ?, ?, ?, ?, 1)',
+                        socket.userId, 0, groupId, content, type, senderPublicKeyJson
+                    );
+
+                    const message = {
+                        id: result.lastID,
+                        senderId: socket.userId,
+                        senderName,
+                        senderAvatar,
+                        receiverId: 0,
+                        groupId,
+                        content,
+                        type,
+                        timestamp: new Date().toISOString(),
+                        senderPublicKey,
+                        tempId
+                    };
+
                     const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
 
                     if (group && group.isPublic) {
@@ -189,31 +201,47 @@ module.exports = function (io, db) {
                         }
                     }
                 } else {
-                    // PRIVATE MESSAGE
+                    // PRIVATE MESSAGE: Always store in DB
                     const receiverData = onlineUsers.get(receiverId);
+                    const isDelivered = !!receiverData;
+
+                    // Check if this is the first DM between these users (for invisible user visibility)
+                    const existingDM = await db.get(
+                        'SELECT 1 FROM messages WHERE groupId = 0 AND ((senderId = ? AND receiverId = ?) OR (senderId = ? AND receiverId = ?)) LIMIT 1',
+                        socket.userId, receiverId, receiverId, socket.userId
+                    );
+                    const isFirstDM = !existingDM;
+
+                    // Also store receiver's public key so sender can decrypt their own sent messages in history
+                    const receiverPublicKeyJson = receiverPublicKey ? JSON.stringify(receiverPublicKey) : null;
+                    
+                    const result = await db.run(
+                        'INSERT INTO messages (senderId, receiverId, groupId, content, type, senderPublicKey, receiverPublicKey, delivered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        socket.userId, receiverId || 0, 0, content, type, senderPublicKeyJson, receiverPublicKeyJson, isDelivered ? 1 : 0
+                    );
+
+                    const message = {
+                        id: result.lastID,
+                        senderId: socket.userId,
+                        senderName,
+                        senderAvatar,
+                        receiverId,
+                        groupId: 0,
+                        content,
+                        type,
+                        timestamp: new Date().toISOString(),
+                        senderPublicKey,
+                        tempId,
+                        delivered: isDelivered
+                    };
 
                     if (receiverData) {
                         // Receiver is ONLINE
-                        // Emit directly
                         io.to(receiverData.socketId).emit('receive_message', message);
-
-                        // Notify sender of delivery
-                        socket.emit('delivery_update', { messageId: message.id, userId: receiverId });
-
-                        // Echo back to sender (with delivered=true)
+                        socket.emit('delivery_update', { messageId: message.id, oderId: receiverId });
                         socket.emit('receive_message', { ...message, delivered: true });
                     } else {
                         // Receiver is OFFLINE
-                        // Insert into DB
-                        const result = await db.run(
-                            'INSERT INTO messages (senderId, receiverId, groupId, content, type) VALUES (?, ?, ?, ?, ?)',
-                            socket.userId, receiverId || 0, groupId || 0, content, type
-                        );
-
-                        // Update ID to real DB ID
-                        message.id = result.lastID;
-
-                        // Echo back to sender (with delivered=false)
                         socket.emit('receive_message', { ...message, delivered: false });
                         
                         // Send push notification to offline user
@@ -232,10 +260,200 @@ module.exports = function (io, db) {
                             }
                         });
                     }
+                    
+                    // If this is the first DM and sender is invisible, broadcast user list
+                    // so the receiver can now see the invisible sender (they have DM history now)
+                    if (isFirstDM && sender) {
+                        const senderUser = await db.get('SELECT isInvisible FROM users WHERE id = ?', socket.userId);
+                        if (senderUser && senderUser.isInvisible) {
+                            await broadcastUserList();
+                        }
+                    }
                 }
 
             } catch (err) {
                 console.error('Error sending message:', err);
+            }
+        });
+
+        // Load message history with pagination
+        socket.on('load_history', async ({ oderId, groupId, beforeId, limit = 10 }) => {
+            if (!socket.userId) return;
+            try {
+                let messages;
+                
+                if (groupId) {
+                    // Group messages: load messages for the group
+                    const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
+                    if (!group) return;
+                    
+                    // Check membership for private groups
+                    if (!group.isPublic) {
+                        const isMember = await db.get('SELECT 1 FROM group_members WHERE groupId = ? AND userId = ?', groupId, socket.userId);
+                        const isAdmin = await db.get('SELECT isAdmin FROM users WHERE id = ?', socket.userId);
+                        if (!isMember && (!isAdmin || !isAdmin.isAdmin)) return;
+                    }
+                    
+                    if (beforeId) {
+                        messages = await db.all(`
+                            SELECT m.*, 
+                                   COALESCE(u.customName, u.name) as senderName, 
+                                   COALESCE(u.customAvatar, u.avatar) as senderAvatar
+                            FROM messages m
+                            LEFT JOIN users u ON m.senderId = u.id
+                            WHERE m.groupId = ? AND m.id < ?
+                            ORDER BY m.id DESC
+                            LIMIT ?
+                        `, groupId, beforeId, limit);
+                    } else {
+                        messages = await db.all(`
+                            SELECT m.*, 
+                                   COALESCE(u.customName, u.name) as senderName, 
+                                   COALESCE(u.customAvatar, u.avatar) as senderAvatar
+                            FROM messages m
+                            LEFT JOIN users u ON m.senderId = u.id
+                            WHERE m.groupId = ?
+                            ORDER BY m.id DESC
+                            LIMIT ?
+                        `, groupId, limit);
+                    }
+                } else if (oderId) {
+                    // P2P messages: load messages between current user and other user
+                    if (beforeId) {
+                        messages = await db.all(`
+                            SELECT m.*, 
+                                   COALESCE(u.customName, u.name) as senderName, 
+                                   COALESCE(u.customAvatar, u.avatar) as senderAvatar
+                            FROM messages m
+                            LEFT JOIN users u ON m.senderId = u.id
+                            WHERE ((m.senderId = ? AND m.receiverId = ?) OR (m.senderId = ? AND m.receiverId = ?))
+                              AND m.groupId = 0 AND m.id < ?
+                            ORDER BY m.id DESC
+                            LIMIT ?
+                        `, socket.userId, oderId, oderId, socket.userId, beforeId, limit);
+                    } else {
+                        messages = await db.all(`
+                            SELECT m.*, 
+                                   COALESCE(u.customName, u.name) as senderName, 
+                                   COALESCE(u.customAvatar, u.avatar) as senderAvatar
+                            FROM messages m
+                            LEFT JOIN users u ON m.senderId = u.id
+                            WHERE ((m.senderId = ? AND m.receiverId = ?) OR (m.senderId = ? AND m.receiverId = ?))
+                              AND m.groupId = 0
+                            ORDER BY m.id DESC
+                            LIMIT ?
+                        `, socket.userId, oderId, oderId, socket.userId, limit);
+                    }
+                }
+                
+                if (messages) {
+                    // Parse public key JSON and reverse to chronological order
+                    const parsedMessages = messages.map(m => ({
+                        ...m,
+                        senderPublicKey: m.senderPublicKey ? JSON.parse(m.senderPublicKey) : null,
+                        receiverPublicKey: m.receiverPublicKey ? JSON.parse(m.receiverPublicKey) : null
+                    })).reverse();
+                    
+                    const hasMore = messages.length === limit;
+                    socket.emit('history_loaded', { 
+                        messages: parsedMessages, 
+                        oderId, 
+                        groupId,
+                        hasMore 
+                    });
+                }
+            } catch (err) {
+                console.error('Error loading history:', err);
+            }
+        });
+
+        // Delete a single message
+        socket.on('delete_message', async ({ messageId }) => {
+            if (!socket.userId) return;
+            try {
+                const message = await db.get('SELECT * FROM messages WHERE id = ?', messageId);
+                if (!message) return;
+                
+                // Check permission: sender can always delete, receiver can delete in P2P
+                const canDelete = message.senderId === socket.userId || 
+                    (message.groupId === 0 && message.receiverId === socket.userId);
+                
+                if (!canDelete) {
+                    socket.emit('error', 'You can only delete your own messages');
+                    return;
+                }
+                
+                await db.run('DELETE FROM messages WHERE id = ?', messageId);
+                
+                // Notify relevant users about deletion
+                if (message.groupId) {
+                    const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', message.groupId);
+                    if (group && group.isPublic) {
+                        for (const [userId, userData] of onlineUsers) {
+                            io.to(userData.socketId).emit('message_deleted', { messageId, groupId: message.groupId });
+                        }
+                    } else {
+                        const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', message.groupId);
+                        for (const member of members) {
+                            const userData = onlineUsers.get(member.userId);
+                            if (userData) {
+                                io.to(userData.socketId).emit('message_deleted', { messageId, groupId: message.groupId });
+                            }
+                        }
+                    }
+                } else {
+                    // P2P: notify both sender and receiver
+                    const senderData = onlineUsers.get(message.senderId);
+                    const receiverData = onlineUsers.get(message.receiverId);
+                    if (senderData) io.to(senderData.socketId).emit('message_deleted', { messageId, oderId: message.senderId === socket.userId ? message.receiverId : message.senderId });
+                    if (receiverData) io.to(receiverData.socketId).emit('message_deleted', { messageId, oderId: message.senderId === socket.userId ? message.receiverId : message.senderId });
+                }
+            } catch (err) {
+                console.error('Error deleting message:', err);
+            }
+        });
+
+        // Delete all messages in a chat
+        socket.on('delete_all_messages', async ({ oderId, groupId }) => {
+            if (!socket.userId) return;
+            try {
+                if (groupId) {
+                    // Group: can only delete own messages
+                    await db.run('DELETE FROM messages WHERE groupId = ? AND senderId = ?', groupId, socket.userId);
+                    
+                    // Notify group members
+                    const group = await db.get('SELECT isPublic FROM groups WHERE id = ?', groupId);
+                    if (group && group.isPublic) {
+                        for (const [userId, userData] of onlineUsers) {
+                            io.to(userData.socketId).emit('messages_deleted_bulk', { groupId, oderId: socket.userId });
+                        }
+                    } else {
+                        const members = await db.all('SELECT userId FROM group_members WHERE groupId = ?', groupId);
+                        for (const member of members) {
+                            const userData = onlineUsers.get(member.userId);
+                            if (userData) {
+                                io.to(userData.socketId).emit('messages_deleted_bulk', { groupId, oderId: socket.userId });
+                            }
+                        }
+                    }
+                } else if (oderId) {
+                    // P2P: both users can delete all messages in the conversation
+                    await db.run(`
+                        DELETE FROM messages 
+                        WHERE groupId = 0 AND (
+                            (senderId = ? AND receiverId = ?) OR 
+                            (senderId = ? AND receiverId = ?)
+                        )
+                    `, socket.userId, oderId, oderId, socket.userId);
+                    
+                    // Notify both users
+                    const myData = onlineUsers.get(socket.userId);
+                    const otherData = onlineUsers.get(oderId);
+                    if (myData) io.to(myData.socketId).emit('messages_deleted_bulk', { oderId });
+                    if (otherData) io.to(otherData.socketId).emit('messages_deleted_bulk', { oderId: socket.userId });
+                }
+            } catch (err) {
+                console.error('Error deleting all messages:', err);
             }
         });
 
@@ -610,7 +828,7 @@ module.exports = function (io, db) {
 
         async function broadcastUserList() {
             try {
-                const users = await db.all('SELECT id, name, avatar, customName, customAvatar, isInvisible, isAdmin FROM users');
+                const users = await db.all('SELECT id, name, avatar, customName, customAvatar, isInvisible, isAdmin, publicKey FROM users');
                 const adminIds = new Set(users.filter(u => u.isAdmin).map(u => u.id));
 
                 for (const [userId, userData] of onlineUsers) {
@@ -618,7 +836,10 @@ module.exports = function (io, db) {
                     const isViewerAdmin = adminIds.has(userId);
 
                     let sharedPrivateGroupUserIds = new Set();
+                    let dmHistoryUserIds = new Set();
+                    
                     if (!isViewerAdmin) {
+                        // Get users from shared private groups
                         const myPrivateGroups = await db.all(`
                             SELECT gm.groupId 
                             FROM group_members gm
@@ -636,12 +857,29 @@ module.exports = function (io, db) {
                             `);
                             sharedMembers.forEach(m => sharedPrivateGroupUserIds.add(m.userId));
                         }
+                        
+                        // Get users with DM history (so invisible users who messaged me stay visible)
+                        const dmPartners = await db.all(`
+                            SELECT DISTINCT 
+                                CASE WHEN senderId = ? THEN receiverId ELSE senderId END as oderId
+                            FROM messages 
+                            WHERE groupId = 0 AND (senderId = ? OR receiverId = ?)
+                        `, userId, userId, userId);
+                        dmPartners.forEach(p => dmHistoryUserIds.add(p.oderId));
                     }
 
                     for (const otherUser of users) {
-                        // Attach public key if available
+                        // Attach public key if available (prefer live key from online user, fall back to stored key)
                         const otherUserData = onlineUsers.get(otherUser.id);
-                        const publicKey = otherUserData ? otherUserData.publicKey : null;
+                        let publicKey = otherUserData ? otherUserData.publicKey : null;
+                        // For offline users, use the stored publicKey from DB
+                        if (!publicKey && otherUser.publicKey) {
+                            try {
+                                publicKey = JSON.parse(otherUser.publicKey);
+                            } catch (e) {
+                                publicKey = null;
+                            }
+                        }
 
                         // Use custom name/avatar if set, otherwise use Google data
                         const effectiveName = otherUser.customName || otherUser.name;
@@ -670,7 +908,8 @@ module.exports = function (io, db) {
                             if (isViewerAdmin) {
                                 if (isOtherOnline) status = 'invisible';
                                 visibleUsers.push({ ...userWithKey, status });
-                            } else if (sharedPrivateGroupUserIds.has(otherUser.id)) {
+                            } else if (sharedPrivateGroupUserIds.has(otherUser.id) || dmHistoryUserIds.has(otherUser.id)) {
+                                // Show if shared private group OR has DM history
                                 visibleUsers.push({ ...userWithKey, status });
                             } else {
                                 continue;
