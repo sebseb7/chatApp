@@ -5,7 +5,9 @@
     "main": "src/index.js",
     "scripts": {
         "start": "webpack serve --mode production --open",
-        "build": "webpack --mode production"
+        "build": "webpack --mode production",
+        "build:checksums": "node scripts/generate-checksums.js",
+        "build:release": "npm run build && npm run build:checksums"
     },
     "dependencies": {
         "@emotion/react": "^11.10.0",

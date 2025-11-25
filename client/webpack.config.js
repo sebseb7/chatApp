@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
@@ -10,7 +11,15 @@ module.exports = (env, argv) => {
         output: {
             path: path.join(__dirname, '/dist'),
             filename: 'bundle.js',
-            publicPath: '/'
+            publicPath: '/',
+            // Reproducible build: use deterministic chunk and module IDs
+            hashFunction: 'sha256',
+            hashDigestLength: 16
+        },
+        // Reproducible build: deterministic module/chunk IDs
+        optimization: {
+            moduleIds: 'deterministic',
+            chunkIds: 'deterministic'
         },
         devServer: {
             port: 3881,
