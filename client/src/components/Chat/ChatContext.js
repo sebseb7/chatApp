@@ -220,8 +220,12 @@ export class ChatProvider extends Component {
     
     setupSocketListeners = () => {
         const { socket } = this.props;
-        if (!socket) return;
+        if (!socket) {
+            console.log('[setupSocketListeners] No socket, skipping');
+            return;
+        }
         
+        console.log('[setupSocketListeners] Setting up listeners');
         socket.on('user_list', this.handleUserList);
         socket.on('group_list', this.handleGroupList);
         socket.on('group_members', this.handleGroupMembers);
@@ -234,12 +238,10 @@ export class ChatProvider extends Component {
         
         socket.emit('get_groups');
         
-        // Broadcast key if already loaded
-        if (this.state.keyPair) {
-            exportPublicKey(this.state.keyPair.publicKey).then(jwk => {
-                socket.emit('update_public_key', { publicKey: jwk });
-            });
-        }
+        // Key is broadcast only on:
+        // 1. Passphrase submit (handlePassphraseSubmit)
+        // 2. Reconnect (componentDidUpdate when isConnected changes)
+        // NOT here - setupSocketListeners can be called multiple times
     };
     
     cleanupSocketListeners = () => {
@@ -258,15 +260,30 @@ export class ChatProvider extends Component {
     };
     
     handleUserList = async (userList) => {
+        console.log('[handleUserList] Received user list with', userList.length, 'users');
         this.setState({ users: userList });
         
         const newPeerKeys = { ...this.state.peerPublicKeys };
         for (const u of userList) {
-            if (u.publicKey && !newPeerKeys[u.id]) {
+            if (u.publicKey) {
+                // Add or update key if changed
                 try {
-                    newPeerKeys[u.id] = await importPublicKey(u.publicKey);
+                    // Only re-import if we don't have it or if it changed
+                    const existingKeyJson = newPeerKeys[u.id] ? 
+                        JSON.stringify(await exportPublicKey(newPeerKeys[u.id])) : null;
+                    const newKeyJson = JSON.stringify(u.publicKey);
+                    if (existingKeyJson !== newKeyJson) {
+                        console.log('[handleUserList] Importing/updating key for user', u.id);
+                        newPeerKeys[u.id] = await importPublicKey(u.publicKey);
+                    }
                 } catch (e) {
                     console.error("Failed to import key for user", u.id, e);
+                }
+            } else {
+                // User cleared their key - remove from cache
+                if (newPeerKeys[u.id]) {
+                    console.log('[handleUserList] Removing key for user', u.id, '(cleared)');
+                    delete newPeerKeys[u.id];
                 }
             }
         }

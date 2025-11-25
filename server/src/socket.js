@@ -70,26 +70,51 @@ module.exports = function (io, db) {
         });
 
         socket.on('update_public_key', async ({ publicKey }) => {
-            if (!socket.userId) return;
+            console.log('update_public_key received, socket.userId:', socket.userId);
+            if (!socket.userId) {
+                console.log('update_public_key: no socket.userId');
+                return;
+            }
             const userData = onlineUsers.get(socket.userId);
+            console.log('update_public_key: userData exists?', !!userData);
             if (userData) {
+                // Only update if the key actually changed
+                const newKeyJson = JSON.stringify(publicKey);
+                const oldKeyJson = userData.publicKey ? JSON.stringify(userData.publicKey) : null;
+                console.log('update_public_key: key changed?', newKeyJson !== oldKeyJson);
+                if (newKeyJson === oldKeyJson) {
+                    console.log('update_public_key: skipping (no change)');
+                    return; // No change, skip to prevent loops
+                }
+                
                 userData.publicKey = publicKey;
                 onlineUsers.set(socket.userId, userData);
                 // Persist to database so offline users' fingerprints are still viewable
-                await db.run('UPDATE users SET publicKey = ? WHERE id = ?', JSON.stringify(publicKey), socket.userId);
+                console.log('update_public_key: saving to DB for userId:', socket.userId);
+                await db.run('UPDATE users SET publicKey = ? WHERE id = ?', newKeyJson, socket.userId);
+                console.log('update_public_key: broadcasting user list');
                 await broadcastUserList();
+                console.log('update_public_key: done');
             }
         });
 
         socket.on('clear_public_key', async () => {
-            if (!socket.userId) return;
+            console.log('clear_public_key received, socket.userId:', socket.userId);
+            if (!socket.userId) {
+                console.log('clear_public_key: no socket.userId');
+                return;
+            }
             const userData = onlineUsers.get(socket.userId);
+            console.log('clear_public_key: userData exists?', !!userData);
             if (userData) {
                 userData.publicKey = null;
                 onlineUsers.set(socket.userId, userData);
                 // Clear from database
+                console.log('clear_public_key: clearing DB for userId:', socket.userId);
                 await db.run('UPDATE users SET publicKey = NULL WHERE id = ?', socket.userId);
+                console.log('clear_public_key: broadcasting user list');
                 await broadcastUserList();
+                console.log('clear_public_key: done');
             }
         });
 
@@ -467,8 +492,8 @@ module.exports = function (io, db) {
                     userData.socketIds.delete(socket.id);
                     // Only remove user from onlineUsers if all their connections are gone
                     if (userData.socketIds.size === 0) {
-                        onlineUsers.delete(socket.userId);
-                        await broadcastUserList();
+                onlineUsers.delete(socket.userId);
+                await broadcastUserList();
                         console.log(`User ${socket.userId} disconnected (all connections closed).`);
                     } else {
                         console.log(`User ${socket.userId} closed one connection (${userData.socketIds.size} remaining).`);
