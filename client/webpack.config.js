@@ -42,7 +42,11 @@ module.exports = (env, argv) => {
                 },
                 '/auth': 'http://localhost:3001'
             },
-            allowedHosts: 'all'
+            allowedHosts: 'all',
+            // CORS headers for SRI hash verification (srihash.org)
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+            }
         },
         module: {
             rules: [

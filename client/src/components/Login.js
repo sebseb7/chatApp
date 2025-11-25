@@ -97,6 +97,53 @@ const Login = () => {
                     Sign in with Google
                 </Button>
             </Paper>
+            <Box
+                component="footer"
+                sx={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    py: 2,
+                    textAlign: 'center',
+                    fontSize: '0.75rem',
+                    color: 'rgba(176, 201, 209, 0.7)',
+                    zIndex: 1,
+                }}
+            >
+                <Typography variant="caption" component="p">
+                    Verify file SHA-256 hashes:{' '}
+                    <Box
+                        component="a"
+                        href="https://www.srihash.org/?url=https://c.growheads.de/index.html"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ color: '#26c6da', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                        index.html
+                    </Box>
+                    {' | '}
+                    <Box
+                        component="a"
+                        href="https://www.srihash.org/?url=https://c.growheads.de/bundle.js"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ color: '#26c6da', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                        bundle.js
+                    </Box>
+                    {' | '}
+                    <Box
+                        component="a"
+                        href="https://www.srihash.org/?url=https://c.growheads.de/sw.js"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ color: '#26c6da', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                        sw.js
+                    </Box>
+                </Typography>
+            </Box>
         </Box>
     );
 };
