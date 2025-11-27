@@ -20,11 +20,11 @@ const drawerWidth = 300;
 
 class UserList extends Component {
     static contextType = ChatContext;
-    
+
     handleLogout = () => {
         window.location.href = '/api/logout';
     };
-    
+
     render() {
         const {
             users,
@@ -45,10 +45,10 @@ class UserList extends Component {
             deleteGroup,
             handleClearKeys
         } = this.context;
-        
+
         const currentUser = users.find(u => u.id === user.id) || user;
         const { isMobile } = this.context;
-        
+
         return (
             <Drawer
                 variant="permanent"
@@ -67,8 +67,8 @@ class UserList extends Component {
                 <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 217, 255, 0.2)', background: 'rgba(15, 76, 92, 0.3)' }}>
                     <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                         <Box display="flex" alignItems="center" gap={1}>
-                            <Avatar 
-                                src={currentUser.avatar} 
+                            <Avatar
+                                src={currentUser.avatar}
                                 sx={{ width: 32, height: 32, cursor: 'pointer' }}
                                 onClick={() => setShowProfileDialog(true)}
                             />
@@ -121,7 +121,7 @@ class UserList extends Component {
                     </Box>
                     <Button size="small" onClick={() => setShowGroupDialog(true)}>Create Group</Button>
                 </Box>
-                
+
                 {/* Groups & Users List */}
                 <List>
                     {groups.map((g) => (
@@ -160,7 +160,16 @@ class UserList extends Component {
                             </ListItemAvatar>
                             <ListItemText
                                 primary={g.name}
-                                secondary={g.isPublic ? "Public Group" : "Group"}
+                                secondary={
+                                    <Box component="span" display="flex" alignItems="center">
+                                        {g.isPublic ? "Public Group" : "Group"}
+                                        {!!g.isEncrypted && (
+                                            <Tooltip title="Encrypted Group">
+                                                <LockIcon sx={{ fontSize: 12, ml: 0.5, color: 'primary.main' }} />
+                                            </Tooltip>
+                                        )}
+                                    </Box>
+                                }
                             />
                         </ListItem>
                     ))}
@@ -197,8 +206,8 @@ class UserList extends Component {
                                             <Tooltip title="View key fingerprint" disableInteractive>
                                                 <IconButton
                                                     size="small"
-                                                    sx={{ 
-                                                        ml: 0.5, 
+                                                    sx={{
+                                                        ml: 0.5,
                                                         p: 0,
                                                         color: 'primary.main',
                                                         '&:hover': { color: 'secondary.main', backgroundColor: 'transparent' }
@@ -220,12 +229,12 @@ class UserList extends Component {
                         </ListItem>
                     ))}
                 </List>
-                
+
                 {/* GitHub Link & SRI Verification */}
-                <Box 
-                    sx={{ 
-                        position: 'absolute', 
-                        bottom: 12, 
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        bottom: 12,
                         left: 12,
                         display: 'flex',
                         alignItems: 'center',
@@ -245,7 +254,7 @@ class UserList extends Component {
                             sx={{ color: 'text.secondary' }}
                         >
                             <svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor">
-                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
                             </svg>
                         </IconButton>
                     </Tooltip>
@@ -262,7 +271,7 @@ class UserList extends Component {
                             sx={{ color: 'text.secondary' }}
                         >
                             <svg height="18" width="18" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+                                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
                             </svg>
                         </IconButton>
                     </Tooltip>

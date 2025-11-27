@@ -34,7 +34,8 @@ async function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
       avatar TEXT,
-      isPublic INTEGER DEFAULT 0
+      isPublic INTEGER DEFAULT 0,
+      isEncrypted INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS group_members (
@@ -72,6 +73,10 @@ async function initDB() {
   // Migration for existing tables
   try {
     await db.exec('ALTER TABLE groups ADD COLUMN isPublic INTEGER DEFAULT 0');
+  } catch (e) { /* Column likely exists */ }
+
+  try {
+    await db.exec('ALTER TABLE groups ADD COLUMN isEncrypted INTEGER DEFAULT 0');
   } catch (e) { /* Column likely exists */ }
 
   try {

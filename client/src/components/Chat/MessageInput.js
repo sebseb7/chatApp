@@ -8,47 +8,113 @@ import { encryptMessage, exportPublicKey } from '../../services/crypto';
 
 class MessageInput extends Component {
     static contextType = ChatContext;
-    
+
     constructor(props) {
         super(props);
         this.state = {
             input: ''
         };
     }
-    
+
     handleInputChange = (e) => {
         this.setState({ input: e.target.value });
     };
-    
+
     handleSend = async () => {
         const { input } = this.state;
-        const { 
-            selectedUser, 
-            socket, 
-            user, 
-            isE2EEEnabled, 
-            keyPair, 
+        const {
+            selectedUser,
+            socket,
+            user,
+            isE2EEEnabled,
+            keyPair,
             peerPublicKeys,
             setShowPassphraseDialog,
             addMessage
         } = this.context;
-        
+
         if (!input.trim() || !selectedUser) return;
-        
+
         const tempId = Date.now();
-        
+
         if (selectedUser.isGroup) {
-            socket.emit('send_message', {
-                groupId: selectedUser.id,
-                content: input,
-                type: 'text',
-                tempId
-            });
+            if (selectedUser.isEncrypted) {
+                // Encrypted Group: Fan-out encryption
+                if (!keyPair) {
+                    alert("You must set a passphrase to use E2EE.");
+                    setShowPassphraseDialog(true);
+                    return;
+                }
+
+                const { groupMembers } = this.context;
+                if (!groupMembers || groupMembers.length === 0) {
+                    alert("No members found in this group to send to.");
+                    return;
+                }
+
+                // Optimistic update
+                const optimisticMsg = {
+                    id: tempId,
+                    tempId,
+                    senderId: user.id,
+                    senderName: user.name,
+                    senderAvatar: user.avatar,
+                    receiverId: 0,
+                    groupId: selectedUser.id,
+                    content: input,
+                    type: 'eee',
+                    timestamp: new Date().toISOString(),
+                    delivered: false,
+                    isOptimistic: true
+                };
+                addMessage(optimisticMsg);
+
+                // Send to each member (including self)
+                for (const member of groupMembers) {
+                    let receiverKey = peerPublicKeys[member.id];
+
+                    // If sending to self, use own public key
+                    if (member.id === user.id) {
+                        receiverKey = keyPair.publicKey;
+                    }
+
+                    if (!receiverKey) {
+                        console.warn(`Skipping member ${member.id} (no public key)`);
+                        continue;
+                    }
+
+                    try {
+                        const encrypted = await encryptMessage(input, keyPair.privateKey, receiverKey);
+                        const content = JSON.stringify(encrypted);
+                        const senderPublicKey = await exportPublicKey(keyPair.publicKey);
+
+                        socket.emit('send_message', {
+                            groupId: selectedUser.id,
+                            receiverId: member.id,
+                            content,
+                            type: 'eee',
+                            senderPublicKey,
+                            tempId
+                        });
+                    } catch (e) {
+                        console.error(`Failed to encrypt for member ${member.id}`, e);
+                    }
+                }
+
+            } else {
+                // Normal Group Message
+                socket.emit('send_message', {
+                    groupId: selectedUser.id,
+                    content: input,
+                    type: 'text',
+                    tempId
+                });
+            }
         } else {
             let content = input;
             let type = 'text';
             let senderPublicKey = null;
-            
+
             if (isE2EEEnabled) {
                 if (!keyPair) {
                     alert("You must set a passphrase to use E2EE.");
@@ -60,7 +126,7 @@ class MessageInput extends Component {
                     alert("Receiver's public key not found. They might be offline or haven't set a passphrase.");
                     return;
                 }
-                
+
                 try {
                     const encrypted = await encryptMessage(input, keyPair.privateKey, receiverKey);
                     content = JSON.stringify(encrypted);
@@ -72,7 +138,7 @@ class MessageInput extends Component {
                     return;
                 }
             }
-            
+
             // Optimistic update for E2EE
             if (type === 'eee') {
                 const optimisticMsg = {
@@ -90,13 +156,13 @@ class MessageInput extends Component {
                 };
                 addMessage(optimisticMsg);
             }
-            
-            // Get receiver's public key in JWK format for storage (so sender can decrypt history)
+
+            // Get receiver's public key in JWK format for storage (so sender can decrypt their own sent messages in history)
             let receiverPublicKey = null;
             if (type === 'eee' && selectedUser.publicKey) {
                 receiverPublicKey = selectedUser.publicKey;
             }
-            
+
             socket.emit('send_message', {
                 receiverId: selectedUser.id,
                 content,
@@ -106,10 +172,10 @@ class MessageInput extends Component {
                 tempId
             });
         }
-        
+
         this.setState({ input: '' });
     };
-    
+
     handlePaste = (e) => {
         const items = e.clipboardData.items;
         for (const item of items) {
@@ -126,18 +192,20 @@ class MessageInput extends Component {
             }
         }
     };
-    
+
     handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             this.handleSend();
         }
     };
-    
+
     render() {
         const { input } = this.state;
-        const { isE2EEEnabled } = this.context;
-        
+        const { isE2EEEnabled, selectedUser } = this.context;
+
+        const isEncrypted = isE2EEEnabled || (selectedUser && selectedUser.isEncrypted);
+
         return (
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end', flexShrink: 0 }}>
                 <Tooltip
@@ -164,7 +232,7 @@ class MessageInput extends Component {
                 <TextField
                     fullWidth
                     variant="outlined"
-                    placeholder={isE2EEEnabled ? "Type an encrypted message..." : "Type a message..."}
+                    placeholder={isEncrypted ? "Type an encrypted message..." : "Type a message..."}
                     value={input}
                     onChange={this.handleInputChange}
                     onPaste={this.handlePaste}
@@ -172,7 +240,7 @@ class MessageInput extends Component {
                     multiline
                     maxRows={4}
                     InputProps={{
-                        startAdornment: isE2EEEnabled ? <LockIcon color="primary" sx={{ mr: 1 }} /> : null
+                        startAdornment: isEncrypted ? <LockIcon color="primary" sx={{ mr: 1 }} /> : null
                     }}
                 />
                 <IconButton color="primary" onClick={this.handleSend} sx={{ mb: 0.5 }}>
