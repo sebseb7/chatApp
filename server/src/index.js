@@ -12,6 +12,10 @@ const multer = require('multer');
 const { initDB } = require('./db');
 const configureAuth = require('./auth');
 const { saveSubscription, removeSubscription, getPublicVapidKey, sendPushToUser, getSubscriptionsForUser } = require('./push');
+const backupService = require('./backup');
+
+// Initialize backup schedules
+backupService.scheduleBackups();
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -86,7 +90,7 @@ initDB().then(db => {
 
     // JSON body parser
     app.use(express.json());
-    
+
     // Disable caching for API routes
     app.use('/api', (req, res, next) => {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -102,11 +106,11 @@ initDB().then(db => {
         maxAge: '7d',
         immutable: true
     }));
-    
+
     // Serve frontend build in production
     if (process.env.NODE_ENV === 'production') {
         const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
-        
+
         // Cache JS/CSS bundles (immutable content-hashed files)
         app.use('/bundle.js', express.static(path.join(clientDist, 'bundle.js'), {
             etag: true,
@@ -114,7 +118,7 @@ initDB().then(db => {
             maxAge: '1y',
             immutable: true
         }));
-        
+
         // Serve index.html with shorter cache (allows updates)
         app.use(express.static(clientDist, {
             etag: true,
@@ -122,7 +126,7 @@ initDB().then(db => {
             maxAge: '1h',
             index: 'index.html'
         }));
-        
+
         // SPA fallback - serve index.html for all non-API routes
         app.get('*', (req, res, next) => {
             if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/uploads') || req.path.startsWith('/socket.io')) {
@@ -351,9 +355,9 @@ initDB().then(db => {
         try {
             const subscriptions = await getSubscriptionsForUser(db, req.user.id);
             console.log(`[Push Test] User ${req.user.id} has ${subscriptions.length} subscription(s)`);
-            
+
             if (subscriptions.length === 0) {
-                return res.status(400).json({ 
+                return res.status(400).json({
                     error: 'No push subscriptions found',
                     hint: 'Enable notifications in Profile Settings first'
                 });
@@ -371,8 +375,8 @@ initDB().then(db => {
             });
 
             console.log(`[Push Test] Notification sent to user ${req.user.id}`);
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 message: 'Test notification sent',
                 subscriptionCount: subscriptions.length
             });
