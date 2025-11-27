@@ -61,7 +61,7 @@ const Login = () => {
                         mb: 2,
                     }}
                 >
-                    Welcome to Chat App
+                    Telegraf
                 </Typography>
                 <Typography
                     variant="body1"
@@ -71,7 +71,7 @@ const Login = () => {
                         mb: 4,
                     }}
                 >
-                    Simple E2EE chat
+                    end2end encrypted chat 
                 </Typography>
                 <Button
                     variant="contained"
