@@ -8,21 +8,21 @@ import { ChatContext } from './ChatContext';
 
 class Message extends Component {
     static contextType = ChatContext;
-    
+
     render() {
         const { msg } = this.props;
-        const { 
-            user, 
+        const {
+            user,
             decryptedMessages,
             decryptionFailed,
-            readReceipts, 
+            readReceipts,
             deliveryStatus,
             handleSenderClick,
             setFullscreenImage,
             deleteMessage,
             selectedUser
         } = this.context;
-        
+
         // System message
         if (msg.type === 'system') {
             return (
@@ -33,40 +33,40 @@ class Message extends Component {
                 </Box>
             );
         }
-        
+
         let displayContent = msg.content;
         const isEncrypted = msg.type === 'eee';
         const { keyPair } = this.context;
-        
+
         if (isEncrypted) {
             if (msg.senderId === user.id && msg.isOptimistic) {
                 displayContent = msg.content;
             } else if (decryptedMessages[msg.id]) {
                 displayContent = decryptedMessages[msg.id];
             } else if (!keyPair) {
-                displayContent = "🔒 Encrypted Message (enter your keys to decrypt)";
+                displayContent = "🔒 Verschlüsselte Nachricht (geben Sie Ihre Schlüssel ein, um sie zu entschlüsseln)";
             } else if (decryptionFailed[msg.id]) {
                 const reason = decryptionFailed[msg.id];
                 if (reason === 'OperationError') {
-                    displayContent = "🔒 Encrypted Message (decryption failed - keys don't match)";
+                    displayContent = "🔒 Verschlüsselte Nachricht (Entschlüsselung fehlgeschlagen - Schlüssel stimmen nicht überein)";
                 } else if (reason === 'missing_key') {
-                    displayContent = "🔒 Encrypted Message (missing sender's key)";
+                    displayContent = "🔒 Verschlüsselte Nachricht (Schlüssel des Absenders fehlt)";
                 } else {
-                    displayContent = `🔒 Encrypted Message (decryption failed: ${reason})`;
+                    displayContent = `🔒 Verschlüsselte Nachricht (Entschlüsselung fehlgeschlagen: ${reason})`;
                 }
             } else {
-                displayContent = "🔒 Encrypted Message";
+                displayContent = "🔒 Verschlüsselte Nachricht";
             }
         }
-        
+
         const isOwnMessage = msg.senderId === user.id;
         const readers = readReceipts[msg.id] || [];
         const deliveryState = deliveryStatus[msg.id];
-        
+
         // Can delete: own messages always, or any message in P2P chat (not group)
         const isGroupChat = selectedUser?.isGroup;
         const canDelete = isOwnMessage || !isGroupChat;
-        
+
         return (
             <Box sx={{
                 display: 'flex',
@@ -91,8 +91,8 @@ class Message extends Component {
                             transform: 'translateY(-1px)',
                         }
                     }}>
-                        <Box 
-                            sx={{ display: 'flex', alignItems: 'center', mb: 0.5, cursor: 'pointer' }} 
+                        <Box
+                            sx={{ display: 'flex', alignItems: 'center', mb: 0.5, cursor: 'pointer' }}
                             onClick={() => handleSenderClick(msg.senderId)}
                         >
                             <Avatar src={msg.senderAvatar} sx={{ width: 24, height: 24, mr: 1 }} />
@@ -122,7 +122,7 @@ class Message extends Component {
                         <Box display="flex" justifyContent="space-between" alignItems="center" mt={0.5}>
                             <Box display="flex" alignItems="center">
                                 {isEncrypted && (
-                                    <Tooltip title="End-to-End Encrypted">
+                                    <Tooltip title="Ende-zu-Ende verschlüsselt">
                                         <LockIcon sx={{ fontSize: 12, color: 'success.main', mr: 0.5 }} />
                                     </Tooltip>
                                 )}
@@ -131,11 +131,11 @@ class Message extends Component {
                                 </Typography>
                             </Box>
                             {canDelete && (
-                                <Tooltip title="Delete message">
+                                <Tooltip title="Nachricht löschen">
                                     <IconButton
                                         size="small"
                                         onClick={() => deleteMessage(msg.id)}
-                                        sx={{ 
+                                        sx={{
                                             p: 0.25,
                                             opacity: 0.5,
                                             '&:hover': { opacity: 1, color: 'error.main' }
@@ -147,17 +147,17 @@ class Message extends Component {
                             )}
                         </Box>
                     </Paper>
-                    
+
                     {/* Read Receipts & Delivery Status */}
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5, width: '100%', alignItems: 'center' }}>
                         {isOwnMessage && deliveryState === 'queued' && (
-                            <Tooltip title="Queued (Receiver is offline)">
+                            <Tooltip title="In der Warteschlange (Empfänger ist offline)">
                                 <AccessTimeIcon sx={{ fontSize: 16, color: 'text.secondary', mr: 0.5 }} />
                             </Tooltip>
                         )}
-                        
+
                         {readers.map(reader => (
-                            <Tooltip key={reader.id} title={`Read by ${reader.name}`}>
+                            <Tooltip key={reader.id} title={`Gelesen von ${reader.name}`}>
                                 <Avatar
                                     src={reader.avatar}
                                     sx={{ width: 16, height: 16, ml: 0.5, border: '1px solid #1a3540' }}

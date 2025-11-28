@@ -17,7 +17,7 @@ import ProfileSettings from '../ProfileSettings';
 // Inner component that has access to ChatContext
 class ChatInner extends Component {
     static contextType = ChatContext;
-    
+
     constructor(props) {
         super(props);
         this.messagesEndRef = createRef();
@@ -25,11 +25,11 @@ class ChatInner extends Component {
         this.prevMessageCount = 0;
         this.prevSelectedUser = null;
     }
-    
+
     componentDidUpdate(prevProps, prevState) {
         const { selectedUser, messages } = this.context;
         const filteredMessages = this.context.getFilteredMessages();
-        
+
         // If we selected a new user, scroll to bottom
         if (selectedUser !== this.prevSelectedUser) {
             this.prevSelectedUser = selectedUser;
@@ -37,32 +37,32 @@ class ChatInner extends Component {
             this.scrollToBottom();
             return;
         }
-        
+
         // If new messages were added at the end (not loaded history), scroll to bottom
         // History loads prepend messages, so count increases but we shouldn't scroll
         if (filteredMessages.length > this.prevMessageCount) {
-            const isHistoryLoad = this.context.loadingHistory === false && 
-                                  this.prevMessageCount > 0 &&
-                                  filteredMessages.length - this.prevMessageCount <= 10;
-            
+            const isHistoryLoad = this.context.loadingHistory === false &&
+                this.prevMessageCount > 0 &&
+                filteredMessages.length - this.prevMessageCount <= 10;
+
             // Only scroll to bottom for new incoming/sent messages, not history loads
             // Check if the newest message ID is actually new
             const prevNewestId = this.prevNewestMsgId;
             const currentNewestId = filteredMessages.length > 0 ? filteredMessages[filteredMessages.length - 1].id : null;
-            
+
             if (currentNewestId !== prevNewestId) {
                 this.scrollToBottom();
             }
         }
-        
+
         this.prevMessageCount = filteredMessages.length;
         this.prevNewestMsgId = filteredMessages.length > 0 ? filteredMessages[filteredMessages.length - 1].id : null;
     }
-    
+
     scrollToBottom = () => {
         this.messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
-    
+
     render() {
         const {
             selectedUser,
@@ -78,21 +78,21 @@ class ChatInner extends Component {
             loadingHistory,
             loadMoreHistory
         } = this.context;
-        
+
         const filteredMessages = getFilteredMessages();
         const currentUser = users.find(u => u.id === user.id) || user;
         const chatKey = selectedUser?.id;
         const canLoadMore = chatKey && hasMoreHistory[chatKey] !== false;
         const { isMobile } = this.context;
-        
+
         return (
             <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }} onClick={ensureAudioContext}>
                 <UserList />
-                
-                <Box component="main" sx={{ 
-                    flexGrow: 1, 
-                    p: isMobile ? 1 : 3, 
-                    display: isMobile && !selectedUser ? 'none' : 'flex', 
+
+                <Box component="main" sx={{
+                    flexGrow: 1,
+                    p: isMobile ? 1 : 3,
+                    display: isMobile && !selectedUser ? 'none' : 'flex',
                     flexDirection: 'column',
                     height: '100dvh',
                     width: isMobile ? '100%' : 'auto',
@@ -111,7 +111,7 @@ class ChatInner extends Component {
                     {selectedUser ? (
                         <>
                             <ChatHeader />
-                            
+
                             <Paper ref={this.messagesContainerRef} sx={{ flexGrow: 1, mb: 2, p: 2, overflowY: 'auto', minHeight: 0 }}>
                                 {/* Load older messages button */}
                                 {canLoadMore && filteredMessages.length > 0 && (
@@ -122,40 +122,40 @@ class ChatInner extends Component {
                                             onClick={loadMoreHistory}
                                             disabled={loadingHistory}
                                             startIcon={loadingHistory ? <CircularProgress size={16} /> : <HistoryIcon />}
-                                            sx={{ 
+                                            sx={{
                                                 borderColor: 'rgba(0, 217, 255, 0.3)',
                                                 '&:hover': { borderColor: 'rgba(0, 217, 255, 0.6)' }
                                             }}
                                         >
-                                            {loadingHistory ? 'Loading...' : 'Load older messages'}
+                                            {loadingHistory ? 'Laden...' : 'Ältere Nachrichten laden'}
                                         </Button>
                                     </Box>
                                 )}
-                                
+
                                 {filteredMessages.map((msg, index) => (
                                     <Message key={msg.id || index} msg={msg} />
                                 ))}
                                 <div ref={this.messagesEndRef} />
                             </Paper>
-                            
+
                             <MessageInput />
                         </>
                     ) : (
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                             <Typography variant="h5" color="textSecondary">
-                                Select a user or group to start chatting
+                                Wählen Sie einen Benutzer oder eine Gruppe aus, um zu chatten
                             </Typography>
                         </Box>
                     )}
                 </Box>
-                
+
                 {/* Dialogs */}
                 <GroupDialog />
                 <AddMemberDialog />
                 <PassphraseDialog />
                 <KeyFingerprintDialog />
                 <FullscreenImageDialog />
-                
+
                 {/* Profile Settings Dialog */}
                 <ProfileSettings
                     open={showProfileDialog}
@@ -170,14 +170,14 @@ class ChatInner extends Component {
                         }
                     }}
                 />
-                
+
                 {/* Connection Status */}
                 <Snackbar
                     open={!isConnected}
                     anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
                 >
                     <Alert severity="error" variant="filled" sx={{ width: '100%' }}>
-                        Disconnected from server. Trying to reconnect...
+                        Verbindung zum Server getrennt. Versuche erneut zu verbinden...
                     </Alert>
                 </Snackbar>
             </Box>
@@ -190,10 +190,10 @@ class ChatInner extends Component {
 class Chat extends Component {
     render() {
         const { user, onUserUpdate, socket, isConnected, isMobile } = this.props;
-        
+
         return (
-            <ChatProvider 
-                user={user} 
+            <ChatProvider
+                user={user}
                 onUserUpdate={onUserUpdate}
                 socket={socket}
                 isConnected={isConnected}

@@ -41,14 +41,14 @@ class MessageInput extends Component {
             if (selectedUser.isEncrypted) {
                 // Encrypted Group: Fan-out encryption
                 if (!keyPair) {
-                    alert("You must set a passphrase to use E2EE.");
+                    alert("Sie müssen eine Passphrase festlegen, um E2EE zu verwenden.");
                     setShowPassphraseDialog(true);
                     return;
                 }
 
                 const { groupMembers } = this.context;
                 if (!groupMembers || groupMembers.length === 0) {
-                    alert("No members found in this group to send to.");
+                    alert("Keine Mitglieder in dieser Gruppe gefunden, an die gesendet werden kann.");
                     return;
                 }
 
@@ -117,13 +117,13 @@ class MessageInput extends Component {
 
             if (isE2EEEnabled) {
                 if (!keyPair) {
-                    alert("You must set a passphrase to use E2EE.");
+                    alert("Sie müssen eine Passphrase festlegen, um E2EE zu verwenden.");
                     setShowPassphraseDialog(true);
                     return;
                 }
                 const receiverKey = peerPublicKeys[selectedUser.id];
                 if (!receiverKey) {
-                    alert("Receiver's public key not found. They might be offline or haven't set a passphrase.");
+                    alert("Öffentlicher Schlüssel des Empfängers nicht gefunden. Er ist möglicherweise offline oder hat keine Passphrase festgelegt.");
                     return;
                 }
 
@@ -134,7 +134,7 @@ class MessageInput extends Component {
                     senderPublicKey = await exportPublicKey(keyPair.publicKey);
                 } catch (e) {
                     console.error("Encryption failed", e);
-                    alert("Encryption failed");
+                    alert("Verschlüsselung fehlgeschlagen");
                     return;
                 }
             }
@@ -211,15 +211,15 @@ class MessageInput extends Component {
                 <Tooltip
                     title={
                         <Box sx={{ p: 1 }}>
-                            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Markdown Syntax Supported:</Typography>
-                            <Typography variant="caption" component="div">**bold** - <strong>bold text</strong></Typography>
-                            <Typography variant="caption" component="div">*italic* - <em>italic text</em></Typography>
-                            <Typography variant="caption" component="div">`code` - inline code</Typography>
-                            <Typography variant="caption" component="div">```code block``` - code block</Typography>
-                            <Typography variant="caption" component="div">[link](url) - hyperlink</Typography>
-                            <Typography variant="caption" component="div">![alt](url) - image</Typography>
-                            <Typography variant="caption" component="div"># Heading - headings</Typography>
-                            <Typography variant="caption" component="div">- item - bullet list</Typography>
+                            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Unterstützte Markdown-Syntax:</Typography>
+                            <Typography variant="caption" component="div">**fett** - <strong>fetter Text</strong></Typography>
+                            <Typography variant="caption" component="div">*kursiv* - <em>kursiver Text</em></Typography>
+                            <Typography variant="caption" component="div">`code` - Inline-Code</Typography>
+                            <Typography variant="caption" component="div">```code block``` - Code-Block</Typography>
+                            <Typography variant="caption" component="div">[link](url) - Hyperlink</Typography>
+                            <Typography variant="caption" component="div">![alt](url) - Bild</Typography>
+                            <Typography variant="caption" component="div"># Heading - Überschriften</Typography>
+                            <Typography variant="caption" component="div">- item - Aufzählungsliste</Typography>
                         </Box>
                     }
                     placement="top"
@@ -232,7 +232,7 @@ class MessageInput extends Component {
                 <TextField
                     fullWidth
                     variant="outlined"
-                    placeholder={isEncrypted ? "Type an encrypted message..." : "Type a message..."}
+                    placeholder={isEncrypted ? "Geben Sie eine verschlüsselte Nachricht ein..." : "Geben Sie eine Nachricht ein..."}
                     value={input}
                     onChange={this.handleInputChange}
                     onPaste={this.handlePaste}

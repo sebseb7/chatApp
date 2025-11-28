@@ -11,7 +11,7 @@ class KeyFingerprint extends Component {
     generateFingerprintHex(publicKey) {
         const normalized = this.normalizeKey(publicKey);
         const keyStr = typeof normalized === 'string' ? normalized : JSON.stringify(normalized);
-        
+
         // Simple hash to create fingerprint segments
         const hashString = (str, salt = 0) => {
             let hash = salt;
@@ -22,14 +22,14 @@ class KeyFingerprint extends Component {
             }
             return Math.abs(hash);
         };
-        
+
         // Generate a longer fingerprint by hashing multiple times
         const parts = [];
         for (let i = 0; i < 8; i++) {
             const hash = hashString(keyStr, i * 12345);
             parts.push(hash.toString(16).padStart(4, '0').slice(0, 4).toUpperCase());
         }
-        
+
         return parts.join(' ');
     }
 
@@ -57,10 +57,10 @@ class KeyFingerprint extends Component {
     }
 
     render() {
-        const { 
-            publicKey, 
-            size = 80, 
-            showHex = false, 
+        const {
+            publicKey,
+            size = 80,
+            showHex = false,
             label = null,
             sx = {}
         } = this.props;
@@ -71,7 +71,7 @@ class KeyFingerprint extends Component {
 
         const keyString = this.getKeyString(publicKey);
         const fingerprint = this.generateFingerprintHex(publicKey);
-        
+
         // Generate SVG using jdenticon
         const svgString = jdenticon.toSvg(keyString, size);
 
@@ -82,7 +82,7 @@ class KeyFingerprint extends Component {
                         {label}
                     </Typography>
                 )}
-                <Tooltip title={`Key Fingerprint: ${fingerprint}`} arrow>
+                <Tooltip title={`Schlüssel-Fingerabdruck: ${fingerprint}`} arrow>
                     <Box
                         sx={{
                             borderRadius: 2,
@@ -101,11 +101,11 @@ class KeyFingerprint extends Component {
                     />
                 </Tooltip>
                 {showHex && (
-                    <Typography 
-                        variant="caption" 
-                        sx={{ 
-                            mt: 1.5, 
-                            fontFamily: 'monospace', 
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            mt: 1.5,
+                            fontFamily: 'monospace',
                             fontSize: '0.7rem',
                             color: 'text.secondary',
                             wordBreak: 'break-all',

@@ -4,14 +4,14 @@ import { ChatContext } from './ChatContext';
 
 class FullscreenImageDialog extends Component {
     static contextType = ChatContext;
-    
+
     handleClose = () => {
         this.context.setFullscreenImage(null);
     };
-    
+
     render() {
         const { fullscreenImage } = this.context;
-        
+
         return (
             <Dialog
                 open={!!fullscreenImage}
@@ -31,7 +31,7 @@ class FullscreenImageDialog extends Component {
                 {fullscreenImage && (
                     <img
                         src={fullscreenImage}
-                        alt="Fullscreen"
+                        alt="Vollbild"
                         style={{
                             maxWidth: '95vw',
                             maxHeight: '95vh',

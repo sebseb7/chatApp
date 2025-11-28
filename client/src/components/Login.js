@@ -71,7 +71,7 @@ const Login = () => {
                         mb: 4,
                     }}
                 >
-                    end2end encrypted chat 
+                    Ende-zu-Ende verschlüsselter Chat
                 </Typography>
                 <Button
                     variant="contained"
@@ -94,7 +94,7 @@ const Login = () => {
                         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                 >
-                    Sign in with Google
+                    Mit Google anmelden
                 </Button>
             </Paper>
             <Box
@@ -112,7 +112,7 @@ const Login = () => {
                 }}
             >
                 <Typography variant="caption" component="p">
-                    Verify file SHA-256 hashes:{' '}
+                    Überprüfe Datei SHA-256 Hashes:{' '}
                     <Box
                         component="a"
                         href="https://www.srihash.org/?url=https://c.growheads.de/index.html"

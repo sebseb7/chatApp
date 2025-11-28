@@ -9,7 +9,7 @@ import KeyFingerprint from '../KeyFingerprint';
 
 class PassphraseDialog extends Component {
     static contextType = ChatContext;
-    
+
     render() {
         const {
             showPassphraseDialog,
@@ -21,31 +21,31 @@ class PassphraseDialog extends Component {
             handlePassphraseSubmit,
             handleClearKeys
         } = this.context;
-        
+
         return (
-            <Dialog 
-                open={showPassphraseDialog} 
-                onClose={() => setShowPassphraseDialog(false)} 
-                maxWidth="sm" 
+            <Dialog
+                open={showPassphraseDialog}
+                onClose={() => setShowPassphraseDialog(false)}
+                maxWidth="sm"
                 fullWidth
                 disableRestoreFocus
             >
                 <DialogTitle>
                     <Box display="flex" alignItems="center" gap={1}>
                         <VpnKeyIcon color="primary" />
-                        E2EE Passphrase
+                        E2EE-Passphrase
                     </Box>
                 </DialogTitle>
                 <DialogContent>
-                    <form 
+                    <form
                         onSubmit={(e) => { e.preventDefault(); if (passphrase) handlePassphraseSubmit(); }}
                         autoComplete="off"
                         data-lpignore="true"
                         data-form-type="other"
                     >
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Your passphrase deterministically generates your encryption keys.
-                            The same passphrase will always produce the same fingerprint.
+                            Ihre Passphrase generiert deterministisch Ihre Verschlüsselungsschlüssel.
+                            Die gleiche Passphrase erzeugt immer denselben Fingerabdruck.
                         </Typography>
                         <input type="text" name="username" autoComplete="username" style={{ display: 'none' }} tabIndex={-1} />
                         <TextField
@@ -59,33 +59,33 @@ class PassphraseDialog extends Component {
                             onChange={(e) => setPassphrase(e.target.value)}
                             autoComplete="new-password"
                             name="encryption-key-passphrase"
-                            inputProps={{ 
+                            inputProps={{
                                 autoComplete: 'new-password',
-                                'data-lpignore': 'true', 
+                                'data-lpignore': 'true',
                                 'data-1p-ignore': 'true',
                                 'data-form-type': 'other'
                             }}
                         />
                     </form>
-                    
+
                     {/* Live Fingerprint Preview - always show to prevent layout shift */}
-                    <Box sx={{ 
-                        mt: 3, 
-                        p: 2, 
-                        borderRadius: 2, 
+                    <Box sx={{
+                        mt: 3,
+                        p: 2,
+                        borderRadius: 2,
                         backgroundColor: 'rgba(0, 0, 0, 0.2)',
                         border: '1px solid rgba(0, 217, 255, 0.2)',
                         textAlign: 'center'
                     }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                            Your Public Key Fingerprint
+                            Ihr öffentlicher Schlüssel-Fingerabdruck
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                             <Box sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', minHeight: 130 }}>
                                 {previewKeyJwk ? (
-                                    <KeyFingerprint 
-                                        publicKey={previewKeyJwk} 
-                                        size={80} 
+                                    <KeyFingerprint
+                                        publicKey={previewKeyJwk}
+                                        size={80}
                                         showHex={true}
                                     />
                                 ) : (
@@ -109,11 +109,11 @@ class PassphraseDialog extends Component {
                                                 ?
                                             </Typography>
                                         </Box>
-                                        <Typography 
-                                            variant="caption" 
-                                            sx={{ 
-                                                mt: 1.5, 
-                                                fontFamily: 'monospace', 
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                                mt: 1.5,
+                                                fontFamily: 'monospace',
                                                 fontSize: '0.7rem',
                                                 color: 'text.secondary',
                                                 opacity: 0.5,
@@ -135,11 +135,11 @@ class PassphraseDialog extends Component {
                     </Box>
                 </DialogContent>
                 <DialogActions>
-                    {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Reset Keys</Button>}
-                    <Button onClick={() => setShowPassphraseDialog(false)}>Cancel</Button>
-                    <Button 
-                        onClick={handlePassphraseSubmit} 
-                        disabled={!passphrase} 
+                    {hasStoredKeys && <Button onClick={handleClearKeys} color="error">Schlüssel zurücksetzen</Button>}
+                    <Button onClick={() => setShowPassphraseDialog(false)}>Abbrechen</Button>
+                    <Button
+                        onClick={handlePassphraseSubmit}
+                        disabled={!passphrase}
                         variant="contained"
                         sx={{
                             background: 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)',
@@ -149,7 +149,7 @@ class PassphraseDialog extends Component {
                             }
                         }}
                     >
-                        {hasStoredKeys ? "Unlock" : "Generate Keys"}
+                        {hasStoredKeys ? "Entsperren" : "Schlüssel generieren"}
                     </Button>
                 </DialogActions>
             </Dialog>

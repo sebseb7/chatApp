@@ -68,10 +68,10 @@ class ProfileSettings extends Component {
 
     handleEnableNotifications = async () => {
         this.setState({ notificationLoading: true, error: null });
-        
+
         try {
             const result = await subscribeToPush();
-            
+
             if (result.success) {
                 this.setState({
                     pushSubscribed: true,
@@ -80,14 +80,14 @@ class ProfileSettings extends Component {
                 });
             } else {
                 this.setState({
-                    error: result.error || 'Failed to enable notifications',
+                    error: result.error || 'Benachrichtigungen konnten nicht aktiviert werden',
                     notificationLoading: false,
                     notificationPermission: getNotificationPermission()
                 });
             }
         } catch (err) {
             this.setState({
-                error: err.message || 'Failed to enable notifications',
+                error: err.message || 'Benachrichtigungen konnten nicht aktiviert werden',
                 notificationLoading: false
             });
         }
@@ -95,10 +95,10 @@ class ProfileSettings extends Component {
 
     handleDisableNotifications = async () => {
         this.setState({ notificationLoading: true, error: null });
-        
+
         try {
             const result = await unsubscribeFromPush();
-            
+
             if (result.success) {
                 this.setState({
                     pushSubscribed: false,
@@ -106,13 +106,13 @@ class ProfileSettings extends Component {
                 });
             } else {
                 this.setState({
-                    error: result.error || 'Failed to disable notifications',
+                    error: result.error || 'Benachrichtigungen konnten nicht deaktiviert werden',
                     notificationLoading: false
                 });
             }
         } catch (err) {
             this.setState({
-                error: err.message || 'Failed to disable notifications',
+                error: err.message || 'Benachrichtigungen konnten nicht deaktiviert werden',
                 notificationLoading: false
             });
         }
@@ -120,15 +120,15 @@ class ProfileSettings extends Component {
 
     handleTestNotification = async () => {
         this.setState({ notificationLoading: true, error: null, testSuccess: false });
-        
+
         try {
             const response = await fetch('/api/push/test', {
                 method: 'POST',
                 credentials: 'include'
             });
-            
+
             const data = await response.json();
-            
+
             if (response.ok) {
                 this.setState({
                     testSuccess: true,
@@ -138,13 +138,13 @@ class ProfileSettings extends Component {
                 setTimeout(() => this.setState({ testSuccess: false }), 3000);
             } else {
                 this.setState({
-                    error: data.error || 'Failed to send test notification',
+                    error: data.error || 'Testbenachrichtigung konnte nicht gesendet werden',
                     notificationLoading: false
                 });
             }
         } catch (err) {
             this.setState({
-                error: err.message || 'Failed to send test notification',
+                error: err.message || 'Testbenachrichtigung konnte nicht gesendet werden',
                 notificationLoading: false
             });
         }
@@ -152,10 +152,10 @@ class ProfileSettings extends Component {
 
     handleForceUpdateSW = async () => {
         this.setState({ notificationLoading: true, error: null });
-        
+
         try {
             const result = await forceUpdateServiceWorker();
-            
+
             if (result.success) {
                 // Re-subscribe after updating SW
                 const subResult = await subscribeToPush();
@@ -167,13 +167,13 @@ class ProfileSettings extends Component {
                 setTimeout(() => this.setState({ testSuccess: false }), 3000);
             } else {
                 this.setState({
-                    error: result.error || 'Failed to update service worker',
+                    error: result.error || 'Service Worker konnte nicht aktualisiert werden',
                     notificationLoading: false
                 });
             }
         } catch (err) {
             this.setState({
-                error: err.message || 'Failed to update service worker',
+                error: err.message || 'Service Worker konnte nicht aktualisiert werden',
                 notificationLoading: false
             });
         }
@@ -193,13 +193,13 @@ class ProfileSettings extends Component {
             // Validate file type
             const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
             if (!allowedTypes.includes(file.type)) {
-                this.setState({ error: 'Please select a valid image file (JPEG, PNG, GIF, WebP, or AVIF)' });
+                this.setState({ error: 'Bitte wählen Sie eine gültige Bilddatei (JPEG, PNG, GIF, WebP oder AVIF)' });
                 return;
             }
 
             // Validate file size (5MB)
             if (file.size > 5 * 1024 * 1024) {
-                this.setState({ error: 'Image must be smaller than 5MB' });
+                this.setState({ error: 'Bild muss kleiner als 5MB sein' });
                 return;
             }
 
@@ -224,10 +224,10 @@ class ProfileSettings extends Component {
 
         try {
             const formData = new FormData();
-            
+
             // Only send customName if it's different from empty (to allow clearing)
             formData.append('customName', customName);
-            
+
             if (avatarFile) {
                 formData.append('avatar', avatarFile);
             }
@@ -240,13 +240,13 @@ class ProfileSettings extends Component {
 
             if (!response.ok) {
                 const data = await response.json();
-                throw new Error(data.error || 'Failed to update profile');
+                throw new Error(data.error || 'Profilaktualisierung fehlgeschlagen');
             }
 
             const updatedUser = await response.json();
-            
+
             this.setState({ success: true, loading: false });
-            
+
             // Notify parent of update
             if (onSave) {
                 onSave(updatedUser);
@@ -258,9 +258,9 @@ class ProfileSettings extends Component {
             }, 500);
 
         } catch (err) {
-            this.setState({ 
-                error: err.message || 'Failed to update profile', 
-                loading: false 
+            this.setState({
+                error: err.message || 'Profilaktualisierung fehlgeschlagen',
+                loading: false
             });
         }
     };
@@ -268,7 +268,7 @@ class ProfileSettings extends Component {
     handleResetToGoogle = async () => {
         const { onSave, onClose } = this.props;
 
-        if (!window.confirm('Reset your profile to use your Google name and avatar?')) {
+        if (!window.confirm('Möchten Sie Ihr Profil auf Ihren Google-Namen und Avatar zurücksetzen?')) {
             return;
         }
 
@@ -286,18 +286,18 @@ class ProfileSettings extends Component {
 
             if (!response.ok) {
                 const data = await response.json();
-                throw new Error(data.error || 'Failed to reset profile');
+                throw new Error(data.error || 'Profilzurücksetzung fehlgeschlagen');
             }
 
             const updatedUser = await response.json();
-            
-            this.setState({ 
-                success: true, 
+
+            this.setState({
+                success: true,
                 loading: false,
                 customName: '',
                 avatarPreview: updatedUser.avatar || updatedUser.googleAvatar
             });
-            
+
             if (onSave) {
                 onSave(updatedUser);
             }
@@ -305,9 +305,9 @@ class ProfileSettings extends Component {
             // Dialog stays open so user can see the result
 
         } catch (err) {
-            this.setState({ 
-                error: err.message || 'Failed to reset profile', 
-                loading: false 
+            this.setState({
+                error: err.message || 'Profilzurücksetzung fehlgeschlagen',
+                loading: false
             });
         }
     };
@@ -315,14 +315,14 @@ class ProfileSettings extends Component {
     handleDeleteAccount = async () => {
         const confirmText = 'DELETE';
         const userInput = window.prompt(
-            `This will permanently delete your account and all associated data.\n\n` +
-            `This action cannot be undone!\n\n` +
-            `Type "${confirmText}" to confirm:`
+            `Dies wird Ihr Konto und alle zugehörigen Daten dauerhaft löschen.\n\n` +
+            `Diese Aktion kann nicht rückgängig gemacht werden!\n\n` +
+            `Geben Sie "${confirmText}" ein, um zu bestätigen:`
         );
 
         if (userInput !== confirmText) {
             if (userInput !== null) {
-                alert('Account deletion cancelled. Text did not match.');
+                alert('Kontolöschung abgebrochen. Text stimmte nicht überein.');
             }
             return;
         }
@@ -337,7 +337,7 @@ class ProfileSettings extends Component {
 
             if (!response.ok) {
                 const data = await response.json();
-                throw new Error(data.error || 'Failed to delete account');
+                throw new Error(data.error || 'Kontolöschung fehlgeschlagen');
             }
 
             // Clear local storage and session storage
@@ -348,9 +348,9 @@ class ProfileSettings extends Component {
             window.location.href = '/';
 
         } catch (err) {
-            this.setState({ 
-                error: err.message || 'Failed to delete account', 
-                loading: false 
+            this.setState({
+                error: err.message || 'Kontolöschung fehlgeschlagen',
+                loading: false
             });
         }
     };
@@ -364,8 +364,8 @@ class ProfileSettings extends Component {
         const googleAvatar = user?.googleAvatar || user?.avatar;
 
         return (
-            <Dialog 
-                open={open} 
+            <Dialog
+                open={open}
                 onClose={onClose}
                 maxWidth="sm"
                 fullWidth
@@ -378,7 +378,7 @@ class ProfileSettings extends Component {
                 }}
             >
                 <DialogTitle sx={{ borderBottom: '1px solid rgba(0, 217, 255, 0.1)' }}>
-                    Profile Settings
+                    Profileinstellungen
                 </DialogTitle>
                 <DialogContent sx={{ pt: 3 }}>
                     {error && (
@@ -388,12 +388,12 @@ class ProfileSettings extends Component {
                     )}
                     {success && (
                         <Alert severity="success" sx={{ mb: 2 }}>
-                            Profile updated successfully!
+                            Profil erfolgreich aktualisiert!
                         </Alert>
                     )}
                     {this.state.testSuccess && (
                         <Alert severity="info" sx={{ mb: 2 }}>
-                            Test notification sent! Check if it appeared.
+                            Testbenachrichtigung gesendet! Prüfen Sie, ob sie erschienen ist.
                         </Alert>
                     )}
 
@@ -402,8 +402,8 @@ class ProfileSettings extends Component {
                         <Box sx={{ position: 'relative', mb: 2 }}>
                             <Avatar
                                 src={avatarPreview}
-                                sx={{ 
-                                    width: 120, 
+                                sx={{
+                                    width: 120,
                                     height: 120,
                                     border: '3px solid',
                                     borderColor: 'primary.main',
@@ -433,7 +433,7 @@ class ProfileSettings extends Component {
                             </IconButton>
                         </Box>
                         <Typography variant="caption" color="text.secondary">
-                            Click to upload a new avatar
+                            Klicken Sie hier, um einen neuen Avatar hochzuladen
                         </Typography>
                         <input
                             ref={this.fileInputRef}
@@ -447,11 +447,11 @@ class ProfileSettings extends Component {
                     {/* Name Input */}
                     <TextField
                         fullWidth
-                        label="Display Name"
+                        label="Anzeigename"
                         value={customName}
                         onChange={this.handleNameChange}
                         placeholder={googleName}
-                        helperText={customName ? '' : `Leave empty to use Google name: ${googleName}`}
+                        helperText={customName ? '' : `Leer lassen, um Google-Namen zu verwenden: ${googleName}`}
                         sx={{ mb: 3 }}
                     />
 
@@ -459,14 +459,14 @@ class ProfileSettings extends Component {
                     {hasCustomProfile && (
                         <>
                             <Divider sx={{ my: 2 }} />
-                            <Box sx={{ 
-                                p: 2, 
-                                borderRadius: 2, 
+                            <Box sx={{
+                                p: 2,
+                                borderRadius: 2,
                                 backgroundColor: 'rgba(0, 0, 0, 0.2)',
                                 border: '1px solid rgba(255, 255, 255, 0.1)'
                             }}>
                                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                                    Your Google Profile
+                                    Ihr Google-Profil
                                 </Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                     <Avatar src={googleAvatar} sx={{ width: 40, height: 40 }} />
@@ -479,7 +479,7 @@ class ProfileSettings extends Component {
                                     sx={{ mt: 2 }}
                                     disabled={loading}
                                 >
-                                    Reset to Google Profile
+                                    Auf Google-Profil zurücksetzen
                                 </Button>
                             </Box>
                         </>
@@ -487,9 +487,9 @@ class ProfileSettings extends Component {
 
                     {/* Notifications Section */}
                     <Divider sx={{ my: 2 }} />
-                    <Box sx={{ 
-                        p: 2, 
-                        borderRadius: 2, 
+                    <Box sx={{
+                        p: 2,
+                        borderRadius: 2,
                         backgroundColor: 'rgba(0, 0, 0, 0.2)',
                         border: '1px solid rgba(255, 255, 255, 0.1)'
                     }}>
@@ -500,30 +500,30 @@ class ProfileSettings extends Component {
                                 <NotificationsOffIcon color="disabled" fontSize="small" />
                             )}
                             <Typography variant="subtitle2">
-                                Push Notifications
+                                Push-Benachrichtigungen
                             </Typography>
                             {this.state.pushSubscribed && (
-                                <Chip label="Enabled" size="small" color="success" sx={{ ml: 'auto' }} />
+                                <Chip label="Aktiviert" size="small" color="success" sx={{ ml: 'auto' }} />
                             )}
                             {this.state.notificationPermission === 'denied' && (
-                                <Chip label="Blocked" size="small" color="error" sx={{ ml: 'auto' }} />
+                                <Chip label="Blockiert" size="small" color="error" sx={{ ml: 'auto' }} />
                             )}
                         </Box>
-                        
+
                         {!this.state.pushSupported ? (
                             <Typography variant="caption" color="text.secondary">
-                                Push notifications are not supported in this browser.
+                                Push-Benachrichtigungen werden in diesem Browser nicht unterstützt.
                             </Typography>
                         ) : this.state.notificationPermission === 'denied' ? (
                             <Typography variant="caption" color="text.secondary">
-                                Notifications are blocked. Please enable them in your browser settings.
+                                Benachrichtigungen sind blockiert. Bitte aktivieren Sie sie in Ihren Browsereinstellungen.
                             </Typography>
                         ) : (
                             <>
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                                    {this.state.pushSubscribed 
-                                        ? 'You will receive notifications for new messages even when the browser is closed.'
-                                        : 'Enable notifications to be alerted when you receive new messages.'}
+                                    {this.state.pushSubscribed
+                                        ? 'Sie erhalten Benachrichtigungen über neue Nachrichten, auch wenn der Browser geschlossen ist.'
+                                        : 'Aktivieren Sie Benachrichtigungen, um bei neuen Nachrichten benachrichtigt zu werden.'}
                                 </Typography>
                                 {this.state.pushSubscribed ? (
                                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -533,7 +533,7 @@ class ProfileSettings extends Component {
                                             onClick={this.handleTestNotification}
                                             disabled={this.state.notificationLoading || loading}
                                         >
-                                            {this.state.notificationLoading ? <CircularProgress size={16} /> : 'Test'}
+                                            {this.state.notificationLoading ? <CircularProgress size={16} /> : 'Testen'}
                                         </Button>
                                         <Button
                                             variant="outlined"
@@ -543,7 +543,7 @@ class ProfileSettings extends Component {
                                             onClick={this.handleDisableNotifications}
                                             disabled={this.state.notificationLoading || loading}
                                         >
-                                            Disable
+                                            Deaktivieren
                                         </Button>
                                         <Button
                                             variant="text"
@@ -552,7 +552,7 @@ class ProfileSettings extends Component {
                                             disabled={this.state.notificationLoading || loading}
                                             sx={{ fontSize: '0.75rem', textTransform: 'none' }}
                                         >
-                                            Fix/Update
+                                            Reparieren/Aktualisieren
                                         </Button>
                                     </Box>
                                 ) : (
@@ -563,7 +563,7 @@ class ProfileSettings extends Component {
                                         onClick={this.handleEnableNotifications}
                                         disabled={this.state.notificationLoading || loading}
                                     >
-                                        Enable Notifications
+                                        Benachrichtigungen aktivieren
                                     </Button>
                                 )}
                             </>
@@ -572,20 +572,20 @@ class ProfileSettings extends Component {
 
                     {/* Danger Zone - Delete Account */}
                     <Divider sx={{ my: 2 }} />
-                    <Box sx={{ 
-                        p: 2, 
-                        borderRadius: 2, 
+                    <Box sx={{
+                        p: 2,
+                        borderRadius: 2,
                         backgroundColor: 'rgba(255, 0, 0, 0.05)',
                         border: '1px solid rgba(255, 82, 82, 0.3)'
                     }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                             <DeleteForeverIcon color="error" fontSize="small" />
                             <Typography variant="subtitle2" color="error">
-                                Danger Zone
+                                Gefahrenzone
                             </Typography>
                         </Box>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                            Permanently delete your account and all associated data. This action cannot be undone.
+                            Löschen Sie Ihr Konto und alle zugehörigen Daten dauerhaft. Diese Aktion kann nicht rückgängig gemacht werden.
                         </Typography>
                         <Button
                             variant="outlined"
@@ -595,20 +595,20 @@ class ProfileSettings extends Component {
                             disabled={loading}
                             size="small"
                         >
-                            Delete Account
+                            Konto löschen
                         </Button>
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0, 217, 255, 0.1)' }}>
                     <Button onClick={onClose} disabled={loading}>
-                        Cancel
+                        Abbrechen
                     </Button>
-                    <Button 
-                        variant="contained" 
+                    <Button
+                        variant="contained"
                         onClick={this.handleSave}
                         disabled={loading}
                     >
-                        {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+                        {loading ? <CircularProgress size={24} /> : 'Änderungen speichern'}
                     </Button>
                 </DialogActions>
             </Dialog>

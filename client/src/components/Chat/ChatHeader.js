@@ -10,7 +10,7 @@ import { ChatContext } from './ChatContext';
 
 class ChatHeader extends Component {
     static contextType = ChatContext;
-    
+
     render() {
         const {
             selectedUser,
@@ -29,14 +29,14 @@ class ChatHeader extends Component {
             isMobile,
             setSelectedUser
         } = this.context;
-        
+
         if (!selectedUser) return null;
-        
+
         return (
-            <Box 
-                display="flex" 
-                justifyContent="space-between" 
-                alignItems="center" 
+            <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
                 mb={2}
                 sx={{
                     flexShrink: 0,
@@ -55,39 +55,39 @@ class ChatHeader extends Component {
                         </IconButton>
                     )}
                     <Box>
-                    <Typography variant="h5">
-                        {selectedUser.isGroup && selectedUser.isPublic 
-                            ? selectedUser.name 
-                            : `Chat with ${selectedUser.name}`}
-                    </Typography>
-                    {selectedUser.isGroup && (
-                        <Box>
-                            <Typography variant="caption" color="textSecondary">
-                                {selectedUser.isPublic
-                                    ? "Public Group"
-                                    : `${groupMembers.length} members`
-                                }
-                            </Typography>
-                            {!selectedUser.isPublic && (
-                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                                    {groupMembers.map(m => (
-                                        <Chip
-                                            key={m.id}
-                                            avatar={<Avatar src={m.avatar} />}
-                                            label={m.name}
-                                            size="small"
-                                            color={m.isMuted ? "error" : "default"}
-                                            variant={m.isMuted ? "outlined" : "filled"}
-                                            onDelete={user.isAdmin === 1 && !selectedUser.isPublic ? () => removeFromGroup(m.id) : undefined}
-                                            onClick={user.isAdmin === 1 ? () => toggleUserMute(m.id) : undefined}
-                                            deleteIcon={user.isAdmin === 1 ? <DeleteIcon /> : undefined}
-                                            sx={{ textDecoration: m.isMuted ? 'line-through' : 'none' }}
-                                        />
-                                    ))}
-                                </Box>
-                            )}
-                        </Box>
-                    )}
+                        <Typography variant="h5">
+                            {selectedUser.isGroup && selectedUser.isPublic
+                                ? selectedUser.name
+                                : `Chat mit ${selectedUser.name}`}
+                        </Typography>
+                        {selectedUser.isGroup && (
+                            <Box>
+                                <Typography variant="caption" color="textSecondary">
+                                    {selectedUser.isPublic
+                                        ? "Öffentliche Gruppe"
+                                        : `${groupMembers.length} Mitglieder`
+                                    }
+                                </Typography>
+                                {!selectedUser.isPublic && (
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+                                        {groupMembers.map(m => (
+                                            <Chip
+                                                key={m.id}
+                                                avatar={<Avatar src={m.avatar} />}
+                                                label={m.name}
+                                                size="small"
+                                                color={m.isMuted ? "error" : "default"}
+                                                variant={m.isMuted ? "outlined" : "filled"}
+                                                onDelete={user.isAdmin === 1 && !selectedUser.isPublic ? () => removeFromGroup(m.id) : undefined}
+                                                onClick={user.isAdmin === 1 ? () => toggleUserMute(m.id) : undefined}
+                                                deleteIcon={user.isAdmin === 1 ? <DeleteIcon /> : undefined}
+                                                sx={{ textDecoration: m.isMuted ? 'line-through' : 'none' }}
+                                            />
+                                        ))}
+                                    </Box>
+                                )}
+                            </Box>
+                        )}
                     </Box>
                 </Box>
                 <Box display="flex" alignItems="center" gap={1}>
@@ -110,9 +110,9 @@ class ChatHeader extends Component {
                                 }
                             />
                             {keyPair && (
-                                <Tooltip title="Reset encryption keys (clears decrypted messages from view)">
-                                    <IconButton 
-                                        onClick={handleClearKeys} 
+                                <Tooltip title="Verschlüsselungsschlüssel zurücksetzen (löscht entschlüsselte Nachrichten aus der Ansicht)">
+                                    <IconButton
+                                        onClick={handleClearKeys}
                                         size="small"
                                         color="warning"
                                     >
@@ -122,14 +122,14 @@ class ChatHeader extends Component {
                             )}
                         </>
                     )}
-                    <Tooltip title={selectedUser.isGroup ? "Delete all YOUR messages in this group" : "Delete all messages in this chat"}>
+                    <Tooltip title={selectedUser.isGroup ? "Lösche alle DEINE Nachrichten in dieser Gruppe" : "Lösche alle Nachrichten in diesem Chat"}>
                         <Button
                             color="error"
                             size="small"
                             startIcon={<DeleteSweepIcon />}
                             onClick={deleteAllMessages}
                         >
-                            {selectedUser.isGroup ? "Delete My Messages" : "Delete All"}
+                            {selectedUser.isGroup ? "Meine Nachrichten löschen" : "Alle löschen"}
                         </Button>
                     </Tooltip>
                     {selectedUser.isGroup && !selectedUser.isPublic && (
@@ -139,11 +139,11 @@ class ChatHeader extends Component {
                             onClick={leaveGroup}
                             sx={{ mr: 1 }}
                         >
-                            Leave
+                            Verlassen
                         </Button>
                     )}
                     {selectedUser.isGroup && !selectedUser.isPublic && (
-                        <Button onClick={() => setShowAddMemberDialog(true)}>Add Member</Button>
+                        <Button onClick={() => setShowAddMemberDialog(true)}>Mitglied hinzufügen</Button>
                     )}
                 </Box>
             </Box>

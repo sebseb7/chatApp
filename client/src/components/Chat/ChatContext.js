@@ -109,9 +109,9 @@ export class ChatProvider extends Component {
         setTimeout(async () => {
             const result = await subscribeToPush();
             if (result.success) {
-                console.log('Push notifications enabled');
+                console.log('Push-Benachrichtigungen aktiviert');
             } else {
-                console.log('Push notifications not enabled:', result.error);
+                console.log('Push-Benachrichtigungen nicht aktiviert:', result.error);
             }
         }, 2000);
     };
@@ -207,10 +207,10 @@ export class ChatProvider extends Component {
                         myPublicKeyJwk: pubKeyJwk
                     });
 
-                    console.log('E2EE keys restored from session-preserved passphrase');
+                    console.log('E2EE-Schlüssel aus sitzungsgespeicherter Passphrase wiederhergestellt');
                     return;
                 } catch (err) {
-                    console.warn('Failed to restore keys from session passphrase:', err);
+                    console.warn('Fehler beim Wiederherstellen der Schlüssel aus der Sitzungs-Passphrase:', err);
                     sessionStorage.removeItem("chat_e2ee_passphrase");
                 }
             }
@@ -709,13 +709,13 @@ export class ChatProvider extends Component {
             this.props.socket?.emit('update_public_key', { publicKey: pubKeyJwk });
 
         } catch (err) {
-            alert("Error with keys: " + err.message);
+            alert("Fehler mit Schlüsseln: " + err.message);
             console.error(err);
         }
     };
 
     handleClearKeys = async () => {
-        if (window.confirm("Clear stored keys? You can recover them by entering the same passphrase again.")) {
+        if (window.confirm("Gespeicherte Schlüssel löschen? Sie können sie wiederherstellen, indem Sie dieselbe Passphrase erneut eingeben.")) {
             await clearKeys();
             this.setState({
                 keyPair: null,
@@ -752,7 +752,7 @@ export class ChatProvider extends Component {
     leaveGroup = () => {
         const { selectedUser } = this.state;
         if (selectedUser && selectedUser.isGroup) {
-            if (window.confirm(`Leave group "${selectedUser.name}"?`)) {
+            if (window.confirm(`Gruppe "${selectedUser.name}" verlassen?`)) {
                 this.props.socket?.emit('leave_group', { groupId: selectedUser.id });
                 this.setState({ selectedUser: null });
             }
@@ -777,14 +777,14 @@ export class ChatProvider extends Component {
     removeFromGroup = (userId) => {
         const { selectedUser } = this.state;
         if (selectedUser && selectedUser.isGroup) {
-            if (window.confirm('Remove this user from the group?')) {
+            if (window.confirm('Diesen Benutzer aus der Gruppe entfernen?')) {
                 this.props.socket?.emit('remove_from_group', { groupId: selectedUser.id, userId });
             }
         }
     };
 
     deleteGroup = (groupId) => {
-        if (window.confirm(`Delete this group?`)) {
+        if (window.confirm(`Diese Gruppe löschen?`)) {
             this.props.socket?.emit('delete_group', { groupId });
             if (this.state.selectedUser?.id === groupId) {
                 this.setState({ selectedUser: null });
@@ -798,7 +798,7 @@ export class ChatProvider extends Component {
         if (targetUser) {
             this.setSelectedUser(targetUser);
         } else {
-            alert("Cannot start private chat with this user (User is invisible)");
+            alert("Privater Chat mit diesem Benutzer kann nicht gestartet werden (Benutzer ist unsichtbar)");
         }
     };
 
@@ -840,7 +840,7 @@ export class ChatProvider extends Component {
     };
 
     deleteMessage = (messageId) => {
-        if (!window.confirm('Delete this message?')) return;
+        if (!window.confirm('Diese Nachricht löschen?')) return;
         this.props.socket?.emit('delete_message', { messageId });
     };
 
@@ -849,8 +849,8 @@ export class ChatProvider extends Component {
         if (!selectedUser) return;
 
         const confirmMsg = selectedUser.isGroup
-            ? 'Delete all YOUR messages in this group? This cannot be undone.'
-            : 'Delete ALL messages in this conversation? This cannot be undone.';
+            ? 'Alle IHRE Nachrichten in dieser Gruppe löschen? Dies kann nicht rückgängig gemacht werden.'
+            : 'Alle Nachrichten in dieser Konversation löschen? Dies kann nicht rückgängig gemacht werden.';
 
         if (!window.confirm(confirmMsg)) return;
 

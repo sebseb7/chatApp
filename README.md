@@ -63,7 +63,84 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 COOKIE_KEY=random_secret_string
 PORT=3001
+
+# Backup Configuration (optional)
+AWS_REGION=eu-central-1
+AWS_ACCESS_KEY_ID=your_access_key_id
+AWS_SECRET_ACCESS_KEY=your_secret_access_key
+S3_BACKUP_BUCKET=your-backup-bucket-name
+DAILYBACKUPS=20
+WEEKLYBACKUPS=20
+MONTHLYBACKUPS=-1
 ```
+
+### S3 Backup Configuration
+
+The application includes automated backup functionality that uploads the database, uploads directory, and `.env` file to Amazon S3.
+
+#### IAM Policy
+
+Create an IAM user with the following policy. This allows the application to:
+- Upload all backup types (daily, weekly, monthly)
+- Delete/rotate daily and weekly backups
+- **Cannot delete monthly backups** (protected)
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowUploadAllBackups",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::your-backup-bucket-name/*"
+    },
+    {
+      "Sid": "AllowListBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::your-backup-bucket-name"
+    },
+    {
+      "Sid": "AllowRotateDailyWeekly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::your-backup-bucket-name/backup-daily-*",
+        "arn:aws:s3:::your-backup-bucket-name/backup-weekly-*"
+      ]
+    },
+    {
+      "Sid": "DenyDeleteMonthly",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::your-backup-bucket-name/backup-monthly-*"
+    }
+  ]
+}
+```
+
+#### Backup Schedule
+
+- **Daily:** 02:00 (keeps last 20)
+- **Weekly:** Sunday 03:00 (keeps last 20)
+- **Monthly:** 1st of month 04:00 (unlimited retention)
+
+#### Manual Backup
+
+```bash
+cd server
+npm run backup
+```
+
 
 ### Running
 

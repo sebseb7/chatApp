@@ -75,31 +75,31 @@ class UserList extends Component {
                             <Box>
                                 <Typography variant="subtitle2" sx={{ lineHeight: 1.2 }}>{currentUser.name}</Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    {currentUser.isInvisible ? 'Invisible' : 'Visible'}
+                                    {currentUser.isInvisible ? 'Unsichtbar' : 'Sichtbar'}
                                 </Typography>
                             </Box>
                         </Box>
                         <Box>
-                            <Tooltip title="Profile Settings">
+                            <Tooltip title="Profileinstellungen">
                                 <IconButton size="small" onClick={(e) => { e.currentTarget.blur(); setShowProfileDialog(true); }}>
                                     <SettingsIcon />
                                 </IconButton>
                             </Tooltip>
-                            <Tooltip title={keyPair ? "E2EE Settings" : "Set Passphrase for E2EE"}>
+                            <Tooltip title={keyPair ? "E2EE-Einstellungen" : "Passphrase für E2EE festlegen"}>
                                 <IconButton size="small" onClick={(e) => { e.currentTarget.blur(); setShowPassphraseDialog(true); }}>
                                     <VpnKeyIcon color={keyPair ? "primary" : "disabled"} />
                                 </IconButton>
                             </Tooltip>
                             {keyPair && (
-                                <Tooltip title="Reset encryption keys">
+                                <Tooltip title="Verschlüsselungsschlüssel zurücksetzen">
                                     <IconButton size="small" onClick={(e) => { e.currentTarget.blur(); handleClearKeys(); }} color="warning">
                                         <VpnKeyOffIcon />
                                     </IconButton>
                                 </Tooltip>
                             )}
                             <Tooltip title={currentUser.isInvisible
-                                ? "You are currently invisible. You appear offline, and only users in shared private groups can start chats with you."
-                                : "You are currently visible. Anyone can see you and start a chat."}>
+                                ? "Sie sind derzeit unsichtbar. Sie erscheinen offline, und nur Benutzer in gemeinsamen privaten Gruppen können Chats mit Ihnen beginnen."
+                                : "Sie sind derzeit sichtbar. Jeder kann Sie sehen und einen Chat beginnen."}>
                                 <IconButton
                                     size="small"
                                     onClick={() => {
@@ -113,13 +113,13 @@ class UserList extends Component {
                             <IconButton
                                 size="small"
                                 onClick={this.handleLogout}
-                                title="Logout"
+                                title="Abmelden"
                             >
                                 <ExitToAppIcon />
                             </IconButton>
                         </Box>
                     </Box>
-                    <Button size="small" onClick={() => setShowGroupDialog(true)}>Create Group</Button>
+                    <Button size="small" onClick={() => setShowGroupDialog(true)}>Gruppe erstellen</Button>
                 </Box>
 
                 {/* Groups & Users List */}
@@ -162,9 +162,9 @@ class UserList extends Component {
                                 primary={g.name}
                                 secondary={
                                     <Box component="span" display="flex" alignItems="center">
-                                        {g.isPublic ? "Public Group" : "Group"}
+                                        {g.isPublic ? "Öffentliche Gruppe" : "Gruppe"}
                                         {!!g.isEncrypted && (
-                                            <Tooltip title="Encrypted Group">
+                                            <Tooltip title="Verschlüsselte Gruppe">
                                                 <LockIcon sx={{ fontSize: 12, ml: 0.5, color: 'primary.main' }} />
                                             </Tooltip>
                                         )}
@@ -203,7 +203,7 @@ class UserList extends Component {
                                     <Box component="span" display="flex" alignItems="center">
                                         {u.status}
                                         {u.publicKey && (
-                                            <Tooltip title="View key fingerprint" disableInteractive>
+                                            <Tooltip title="Schlüssel-Fingerabdruck anzeigen" disableInteractive>
                                                 <IconButton
                                                     size="small"
                                                     sx={{
@@ -244,7 +244,7 @@ class UserList extends Component {
                         '&:hover': { opacity: 1 }
                     }}
                 >
-                    <Tooltip title="View on GitHub">
+                    <Tooltip title="Auf GitHub ansehen">
                         <IconButton
                             component="a"
                             href="https://github.com/sebseb7/chatApp"
@@ -260,7 +260,7 @@ class UserList extends Component {
                     </Tooltip>
                     <Tooltip title={
                         <Box sx={{ textAlign: 'center' }}>
-                            <div>Verify file hashes:</div>
+                            <div>Datei-Hashes überprüfen:</div>
                             <Box component="a" href="https://www.srihash.org/?url=https://c.growheads.de/index.html" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>index.html</Box>
                             <Box component="a" href="https://www.srihash.org/?url=https://c.growheads.de/bundle.js" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>bundle.js</Box>
                             <Box component="a" href="https://www.srihash.org/?url=https://c.growheads.de/sw.js" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>sw.js</Box>

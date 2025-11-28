@@ -9,20 +9,20 @@ import KeyFingerprint from '../KeyFingerprint';
 
 class KeyFingerprintDialog extends Component {
     static contextType = ChatContext;
-    
+
     handleClose = () => {
         const { setShowKeyFingerprintDialog, setViewingKeyUser } = this.context;
         setShowKeyFingerprintDialog(false);
         setViewingKeyUser(null);
     };
-    
+
     render() {
         const {
             showKeyFingerprintDialog,
             viewingKeyUser,
             myPublicKeyJwk
         } = this.context;
-        
+
         return (
             <Dialog
                 open={showKeyFingerprintDialog && !!viewingKeyUser}
@@ -39,7 +39,7 @@ class KeyFingerprintDialog extends Component {
                 <DialogTitle sx={{ borderBottom: '1px solid rgba(0, 217, 255, 0.1)' }}>
                     <Box display="flex" alignItems="center" gap={1}>
                         <LockIcon color="primary" />
-                        Key Fingerprint
+                        Schlüssel-Fingerabdruck
                     </Box>
                 </DialogTitle>
                 <DialogContent sx={{ pt: 3 }}>
@@ -49,45 +49,45 @@ class KeyFingerprintDialog extends Component {
                                 <Avatar src={viewingKeyUser.avatar} sx={{ width: 48, height: 48 }} />
                                 <Typography variant="h6">{viewingKeyUser.name}</Typography>
                             </Box>
-                            
+
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                                Compare this fingerprint with {viewingKeyUser.name}'s device to verify their identity
-                                and ensure your messages are secure from MITM attacks.
+                                Vergleichen Sie diesen Fingerabdruck mit dem Gerät von {viewingKeyUser.name}, um deren Identität zu überprüfen
+                                und sicherzustellen, dass Ihre Nachrichten vor MITM-Angriffen sicher sind.
                             </Typography>
 
-                            <Box sx={{ 
-                                p: 3, 
-                                borderRadius: 2, 
+                            <Box sx={{
+                                p: 3,
+                                borderRadius: 2,
                                 backgroundColor: 'rgba(0, 0, 0, 0.2)',
                                 border: '1px solid rgba(0, 217, 255, 0.2)'
                             }}>
                                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
-                                    {viewingKeyUser.name}'s Fingerprint (safe to publicize)
+                                    {viewingKeyUser.name}s Fingerabdruck (kann öffentlich geteilt werden)
                                 </Typography>
                                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                    <KeyFingerprint 
-                                        publicKey={viewingKeyUser.publicKey} 
-                                        size={100} 
+                                    <KeyFingerprint
+                                        publicKey={viewingKeyUser.publicKey}
+                                        size={100}
                                         showHex={true}
                                     />
                                 </Box>
                             </Box>
 
                             {myPublicKeyJwk && (
-                                <Box sx={{ 
+                                <Box sx={{
                                     mt: 3,
-                                    p: 3, 
-                                    borderRadius: 2, 
+                                    p: 3,
+                                    borderRadius: 2,
                                     backgroundColor: 'rgba(0, 0, 0, 0.2)',
                                     border: '1px solid rgba(0, 217, 255, 0.2)'
                                 }}>
                                     <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
-                                        Your Fingerprint (safe to publicize)
+                                        Ihr Fingerabdruck (kann öffentlich geteilt werden)
                                     </Typography>
                                     <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                        <KeyFingerprint 
-                                            publicKey={myPublicKeyJwk} 
-                                            size={100} 
+                                        <KeyFingerprint
+                                            publicKey={myPublicKeyJwk}
+                                            size={100}
                                             showHex={true}
                                         />
                                     </Box>
@@ -98,7 +98,7 @@ class KeyFingerprintDialog extends Component {
                 </DialogContent>
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0, 217, 255, 0.1)' }}>
                     <Button onClick={this.handleClose}>
-                        Close
+                        Schließen
                     </Button>
                 </DialogActions>
             </Dialog>

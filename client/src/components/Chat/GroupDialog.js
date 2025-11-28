@@ -36,9 +36,9 @@ class GroupDialog extends Component {
                     border: '1px solid rgba(0, 217, 255, 0.2)'
                 }}
             >
-                <Typography variant="h6">Create Group</Typography>
+                <Typography variant="h6">Gruppe erstellen</Typography>
                 <TextField
-                    label="Group Name"
+                    label="Gruppenname"
                     value={newGroupName}
                     onChange={(e) => setNewGroupName(e.target.value)}
                     fullWidth
@@ -52,7 +52,7 @@ class GroupDialog extends Component {
                                 onChange={(e) => setNewGroupIsPublic(e.target.checked)}
                             />
                         }
-                        label="Public Group (Auto-add everyone)"
+                        label="Öffentliche Gruppe (Jeden automatisch hinzufügen)"
                     />
                 )}
                 {!newGroupIsPublic && (
@@ -63,12 +63,12 @@ class GroupDialog extends Component {
                                 onChange={(e) => setNewGroupIsEncrypted(e.target.checked)}
                             />
                         }
-                        label="Encrypted Only (End-to-End Encrypted)"
+                        label="Nur verschlüsselt (Ende-zu-Ende verschlüsselt)"
                     />
                 )}
                 <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                    <Button onClick={() => setShowGroupDialog(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={createGroup}>Create</Button>
+                    <Button onClick={() => setShowGroupDialog(false)}>Abbrechen</Button>
+                    <Button variant="contained" onClick={createGroup}>Erstellen</Button>
                 </Box>
             </Paper>
         );
