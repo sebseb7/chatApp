@@ -59,6 +59,7 @@ class PassphraseDialog extends Component {
                             onChange={(e) => setPassphrase(e.target.value)}
                             autoComplete="new-password"
                             name="encryption-key-passphrase"
+                            InputLabelProps={{ shrink: true }}
                             inputProps={{
                                 autoComplete: 'new-password',
                                 'data-lpignore': 'true',

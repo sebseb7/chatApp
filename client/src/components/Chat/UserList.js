@@ -261,9 +261,9 @@ class UserList extends Component {
                     <Tooltip title={
                         <Box sx={{ textAlign: 'center' }}>
                             <div>Datei-Hashes überprüfen:</div>
-                            <Box component="a" href="https://www.srihash.org/?url=https://c.growheads.de/index.html" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>index.html</Box>
-                            <Box component="a" href="https://www.srihash.org/?url=https://c.growheads.de/bundle.js" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>bundle.js</Box>
-                            <Box component="a" href="https://www.srihash.org/?url=https://c.growheads.de/sw.js" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>sw.js</Box>
+                            <Box component="a" href="https://www.srihash.org/?url=https://telegraf.sebgreen.net/index.html" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>index.html</Box>
+                            <Box component="a" href="https://www.srihash.org/?url=https://telegraf.sebgreen.net/bundle.js" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>bundle.js</Box>
+                            <Box component="a" href="https://www.srihash.org/?url=https://telegraf.sebgreen.net/sw.js" target="_blank" rel="noopener noreferrer" sx={{ color: '#26c6da', display: 'block' }}>sw.js</Box>
                         </Box>
                     }>
                         <IconButton

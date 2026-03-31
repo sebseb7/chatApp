@@ -42,6 +42,7 @@ class GroupDialog extends Component {
                     value={newGroupName}
                     onChange={(e) => setNewGroupName(e.target.value)}
                     fullWidth
+                    InputLabelProps={{ shrink: true }}
                     sx={{ my: 2 }}
                 />
                 {user.isAdmin === 1 && (

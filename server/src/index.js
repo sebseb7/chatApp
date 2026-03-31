@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const passport = require('passport');
 const cookieSession = require('cookie-session');
 const multer = require('multer');
+const bcrypt = require('bcrypt');
 const { initDB } = require('./db');
 const configureAuth = require('./auth');
 const { saveSubscription, removeSubscription, getPublicVapidKey, sendPushToUser, getSubscriptionsForUser } = require('./push');
@@ -164,6 +165,56 @@ initDB().then(db => {
             res.redirect('/');
         }
     );
+
+    app.post('/auth/register', async (req, res) => {
+        const { username, passphrase } = req.body;
+        if (!username || !passphrase) {
+            return res.status(400).json({ error: 'Benutzername und Passphrase erforderlich' });
+        }
+
+        try {
+            const existingUser = await db.get('SELECT * FROM users WHERE name = ?', username);
+            if (existingUser) {
+                return res.status(400).json({ error: 'Benutzername bereits vergeben' });
+            }
+
+            const hashedPassword = await bcrypt.hash(passphrase, 10);
+            const result = await db.run(
+                'INSERT INTO users (name, passphraseHash, isInvisible) VALUES (?, ?, 1)',
+                username,
+                hashedPassword
+            );
+
+            const user = await db.get('SELECT * FROM users WHERE id = ?', result.lastID);
+
+            req.login(user, (err) => {
+                if (err) {
+                    return res.status(500).json({ error: 'Anmeldung fehlgeschlagen' });
+                }
+                return res.json(transformUser(user));
+            });
+        } catch (err) {
+            console.error('Registration error:', err);
+            res.status(500).json({ error: 'Registrierung fehlgeschlagen' });
+        }
+    });
+
+    app.post('/auth/login', (req, res, next) => {
+        passport.authenticate('local', (err, user, info) => {
+            if (err) {
+                return next(err);
+            }
+            if (!user) {
+                return res.status(401).json({ error: info.message || 'Anmeldung fehlgeschlagen' });
+            }
+            req.login(user, (err) => {
+                if (err) {
+                    return next(err);
+                }
+                return res.json(transformUser(user));
+            });
+        })(req, res, next);
+    });
 
     app.get('/api/current_user', (req, res) => {
         res.send(transformUser(req.user));

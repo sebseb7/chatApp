@@ -1,5 +1,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const LocalStrategy = require('passport-local').Strategy;
+const bcrypt = require('bcrypt');
 
 module.exports = function (passport, db) {
     passport.serializeUser((user, done) => {
@@ -39,4 +41,29 @@ module.exports = function (passport, db) {
                 return done(err, null);
             }
         }));
+
+    passport.use(new LocalStrategy({
+        usernameField: 'username',
+        passwordField: 'passphrase'
+    }, async (username, passphrase, done) => {
+        try {
+            const user = await db.get('SELECT * FROM users WHERE name = ? AND googleId IS NULL', username);
+            if (!user) {
+                return done(null, false, { message: 'Benutzer nicht gefunden' });
+            }
+
+            if (!user.passphraseHash) {
+                return done(null, false, { message: 'Ungültige Anmeldemethode' });
+            }
+
+            const match = await bcrypt.compare(passphrase, user.passphraseHash);
+            if (!match) {
+                return done(null, false, { message: 'Falsche Passphrase' });
+            }
+
+            return done(null, user);
+        } catch (err) {
+            return done(err);
+        }
+    }));
 };

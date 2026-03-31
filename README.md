@@ -199,17 +199,17 @@ Verify the integrity of deployed files by comparing SHA-256 hashes:
 <!-- BUILD_HASHES_START -->
 | File | SRI Hash (compare with [srihash.org](https://srihash.org)) |
 |------|-------------------------------------------------------------|
-| `index.html` | `sha256-YyolPKIzfWYaXANPo52zJU+6F30lzm5V/AUtALOD4WU=` |
-| `bundle.js` | `sha256-TwUWO0YQFdK9/O7fv0wKBpu+o2xosoopntrO0W7CZ24=` |
+| `index.html` | `sha256-70+ZTVNjCsBwM/meUcdsPkWvmLmVnwU7L2eQ553UJec=` |
+| `bundle.js` | `sha256-cDDWKGVpuTSkeOdSzMhKw2D/W/Qy/DyJjrUtjpBqVuU=` |
 | `sw.js` | `sha256-A4EjsQpU1fR3RBC3mnpKzq1gjuB46Wa9yAK8KoHXzxE=` |
 <!-- BUILD_HASHES_END -->
 
-**Verify online:** [index.html](https://www.srihash.org/?url=https://c.growheads.de/index.html) | [bundle.js](https://www.srihash.org/?url=https://c.growheads.de/bundle.js) | [sw.js](https://www.srihash.org/?url=https://c.growheads.de/sw.js)
+**Verify online:** [index.html](https://www.srihash.org/?url=https://telegraf.sebgreen.net/index.html) | [bundle.js](https://www.srihash.org/?url=https://telegraf.sebgreen.net/bundle.js) | [sw.js](https://www.srihash.org/?url=https://telegraf.sebgreen.net/sw.js)
 
 **Bookmarklet:** Create a bookmark with this URL to verify anytime:
 
 ```
-javascript:(async()=>{const R='https://raw.githubusercontent.com/sebseb7/chatApp/refs/heads/main/README.md?'+Date.now(),B='https://c.growheads.de',F=['index.html','bundle.js','sw.js'];try{const r=await(await fetch(R)).text(),h={};r.replace(/`([^`]+)`\s*\|\s*`sha256-([^`]+)`/g,(m,f,v)=>F.includes(f)&&(h[f]=v));const s=async u=>{const d=await(await fetch(u)).arrayBuffer(),b=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(b)))};let o='ChatApp Build Verification\n\n';for(const f of F){const a=await s(`${B}/${f}`),e=h[f],m=a===e;o+=`${m?'✅':'❌'} ${f}: ${m?'MATCH':'MISMATCH'}\n`}alert(o)}catch(e){alert('Error: '+e.message)}})()
+javascript:(async()=>{const R='https://raw.githubusercontent.com/sebseb7/chatApp/refs/heads/main/README.md?'+Date.now(),B='https://telegraf.sebgreen.net',F=['index.html','bundle.js','sw.js'];try{const r=await(await fetch(R)).text(),h={};r.replace(/`([^`]+)`\s*\|\s*`sha256-([^`]+)`/g,(m,f,v)=>F.includes(f)&&(h[f]=v));const s=async u=>{const d=await(await fetch(u)).arrayBuffer(),b=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(b)))};let o='ChatApp Build Verification\n\n';for(const f of F){const a=await s(`${B}/${f}`),e=h[f],m=a===e;o+=`${m?'✅':'❌'} ${f}: ${m?'MATCH':'MISMATCH'}\n`}alert(o)}catch(e){alert('Error: '+e.message)}})()
 ```
 
 ## License

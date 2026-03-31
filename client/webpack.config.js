@@ -34,7 +34,7 @@ module.exports = (env, argv) => {
                 publicPath: '/'
             },
             client: isProduction ? false : {
-                webSocketURL: 'wss://c.growheads.de/ws',
+                webSocketURL: 'wss://telegraf.sebgreen.net/ws',
             },
             proxy: {
                 '/api': 'http://localhost:3001',

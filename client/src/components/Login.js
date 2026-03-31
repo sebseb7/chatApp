@@ -1,8 +1,56 @@
-import React from 'react';
-import { Button, Box, Typography, Paper } from '@mui/material';
+import React, { useState } from 'react';
+import { Button, Box, Typography, Paper, TextField, Divider, Alert, CircularProgress, InputAdornment, IconButton } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
 const Login = () => {
+    const [mode, setMode] = useState('login'); // 'login' or 'register'
+    const [username, setUsername] = useState('');
+    const [passphrase, setPassphrase] = useState('');
+    const [confirmPassphrase, setConfirmPassphrase] = useState('');
+    const [showPassphrase, setShowPassphrase] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError(null);
+        setLoading(true);
+
+        if (mode === 'register' && passphrase !== confirmPassphrase) {
+            setError('Passphrasen stimmen nicht überein');
+            setLoading(false);
+            return;
+        }
+
+        const endpoint = mode === 'register' ? '/auth/register' : '/auth/login';
+
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, passphrase }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Ein Fehler ist aufgetreten');
+            }
+
+            // Reload to get the session and start the app
+            window.location.reload();
+        } catch (err) {
+            setError(err.message);
+            setLoading(false);
+        }
+    };
+
     return (
         <Box
             sx={{
@@ -73,14 +121,16 @@ const Login = () => {
                 >
                     Ende-zu-Ende verschlüsselter Chat
                 </Typography>
+
                 <Button
                     variant="contained"
                     startIcon={<GoogleIcon />}
                     href="/auth/google"
+                    fullWidth
                     size="large"
                     sx={{
                         py: 1.5,
-                        px: 4,
+                        mb: 3,
                         fontSize: '16px',
                         fontWeight: 600,
                         background: 'linear-gradient(135deg, #0f4c5c 0%, #1a6b7e 100%)',
@@ -96,6 +146,142 @@ const Login = () => {
                 >
                     Mit Google anmelden
                 </Button>
+
+                <Divider sx={{ my: 3, '&::before, &::after': { borderColor: 'rgba(0, 217, 255, 0.2)' } }}>
+                    <Typography variant="caption" sx={{ color: 'rgba(176, 201, 209, 0.7)' }}>
+                        ODER
+                    </Typography>
+                </Divider>
+
+                <form onSubmit={handleSubmit}>
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 2, textAlign: 'left' }}>
+                            {error}
+                        </Alert>
+                    )}
+
+                    <TextField
+                        fullWidth
+                        label="Benutzername"
+                        variant="outlined"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        margin="normal"
+                        required
+                        InputLabelProps={{ shrink: true }}
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                '& fieldset': { borderColor: 'rgba(0, 217, 255, 0.2)' },
+                                '&:hover fieldset': { borderColor: 'rgba(0, 217, 255, 0.5)' },
+                                '&.Mui-focused fieldset': { borderColor: '#00d9ff' },
+                                color: '#e8f4f8',
+                            },
+                            '& .MuiInputLabel-root': { color: 'rgba(176, 201, 209, 0.7)' },
+                            '& .MuiInputLabel-root.Mui-focused': { color: '#00d9ff' },
+                        }}
+                    />
+
+                    <TextField
+                        fullWidth
+                        label={mode === 'register' ? 'Passphrase wählen' : 'Passphrase'}
+                        type={showPassphrase ? 'text' : 'password'}
+                        variant="outlined"
+                        value={passphrase}
+                        onChange={(e) => setPassphrase(e.target.value)}
+                        margin="normal"
+                        required
+                        InputLabelProps={{ shrink: true }}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        aria-label="toggle password visibility"
+                                        onClick={() => setShowPassphrase(!showPassphrase)}
+                                        edge="end"
+                                        sx={{ color: 'rgba(176, 201, 209, 0.7)' }}
+                                    >
+                                        {showPassphrase ? <VisibilityOff /> : <Visibility />}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                '& fieldset': { borderColor: 'rgba(0, 217, 255, 0.2)' },
+                                '&:hover fieldset': { borderColor: 'rgba(0, 217, 255, 0.5)' },
+                                '&.Mui-focused fieldset': { borderColor: '#00d9ff' },
+                                color: '#e8f4f8',
+                            },
+                            '& .MuiInputLabel-root': { color: 'rgba(176, 201, 209, 0.7)' },
+                            '& .MuiInputLabel-root.Mui-focused': { color: '#00d9ff' },
+                        }}
+                    />
+
+                    {mode === 'register' && (
+                        <>
+                            <TextField
+                                fullWidth
+                                label="Passphrase bestätigen"
+                                type={showPassphrase ? 'text' : 'password'}
+                                variant="outlined"
+                                value={confirmPassphrase}
+                                onChange={(e) => setConfirmPassphrase(e.target.value)}
+                                margin="normal"
+                                required
+                                InputLabelProps={{ shrink: true }}
+                                sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                        '& fieldset': { borderColor: 'rgba(0, 217, 255, 0.2)' },
+                                        '&:hover fieldset': { borderColor: 'rgba(0, 217, 255, 0.5)' },
+                                        '&.Mui-focused fieldset': { borderColor: '#00d9ff' },
+                                        color: '#e8f4f8',
+                                    },
+                                    '& .MuiInputLabel-root': { color: 'rgba(176, 201, 209, 0.7)' },
+                                    '& .MuiInputLabel-root.Mui-focused': { color: '#00d9ff' },
+                                }}
+                            />
+                            <Alert severity="warning" sx={{ mt: 2, textAlign: 'left' }}>
+                                Achtung: Es gibt keine Möglichkeit, die Passphrase wiederherzustellen!
+                            </Alert>
+                        </>
+                    )}
+
+                    <Button
+                        type="submit"
+                        variant="contained"
+                        fullWidth
+                        size="large"
+                        disabled={loading}
+                        startIcon={loading ? <CircularProgress size={20} /> : (mode === 'register' ? <PersonAddIcon /> : <VpnKeyIcon />)}
+                        sx={{
+                            mt: 3,
+                            py: 1.5,
+                            fontSize: '16px',
+                            fontWeight: 600,
+                            background: 'rgba(0, 217, 255, 0.1)',
+                            border: '1px solid rgba(0, 217, 255, 0.3)',
+                            color: '#00d9ff',
+                            '&:hover': {
+                                background: 'rgba(0, 217, 255, 0.2)',
+                            },
+                        }}
+                    >
+                        {mode === 'register' ? 'Registrieren' : 'Anmelden'}
+                    </Button>
+
+                    <Button
+                        variant="text"
+                        onClick={() => {
+                            setMode(mode === 'login' ? 'register' : 'login');
+                            setError(null);
+                            setPassphrase('');
+                            setConfirmPassphrase('');
+                        }}
+                        sx={{ mt: 2, color: 'rgba(176, 201, 209, 0.7)' }}
+                    >
+                        {mode === 'login' ? 'Neues Konto erstellen' : 'Bereits ein Konto? Anmelden'}
+                    </Button>
+                </form>
             </Paper>
             <Box
                 component="footer"
@@ -115,7 +301,7 @@ const Login = () => {
                     Überprüfe Datei SHA-256 Hashes:{' '}
                     <Box
                         component="a"
-                        href="https://www.srihash.org/?url=https://c.growheads.de/index.html"
+                        href="https://www.srihash.org/?url=https://telegraf.sebgreen.net/index.html"
                         target="_blank"
                         rel="noopener noreferrer"
                         sx={{ color: '#26c6da', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
@@ -125,7 +311,7 @@ const Login = () => {
                     {' | '}
                     <Box
                         component="a"
-                        href="https://www.srihash.org/?url=https://c.growheads.de/bundle.js"
+                        href="https://www.srihash.org/?url=https://telegraf.sebgreen.net/bundle.js"
                         target="_blank"
                         rel="noopener noreferrer"
                         sx={{ color: '#26c6da', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
@@ -135,7 +321,7 @@ const Login = () => {
                     {' | '}
                     <Box
                         component="a"
-                        href="https://www.srihash.org/?url=https://c.growheads.de/sw.js"
+                        href="https://www.srihash.org/?url=https://telegraf.sebgreen.net/sw.js"
                         target="_blank"
                         rel="noopener noreferrer"
                         sx={{ color: '#26c6da', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}

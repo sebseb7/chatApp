@@ -16,6 +16,7 @@ async function initDB() {
       avatar TEXT,
       customName TEXT,
       customAvatar TEXT,
+      passphraseHash TEXT,
       isAdmin INTEGER DEFAULT 0,
       isInvisible INTEGER DEFAULT 1
     );
@@ -110,6 +111,11 @@ async function initDB() {
   // Migration for tracking message delivery status
   try {
     await db.exec('ALTER TABLE messages ADD COLUMN delivered INTEGER DEFAULT 0');
+  } catch (e) { /* Column likely exists */ }
+
+  // Migration for passphrase login
+  try {
+    await db.exec('ALTER TABLE users ADD COLUMN passphraseHash TEXT');
   } catch (e) { /* Column likely exists */ }
 
   return db;

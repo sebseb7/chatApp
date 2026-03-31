@@ -21,6 +21,7 @@ import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
 import { subscribeToPush, unsubscribeFromPush, getSubscriptionStatus, isPushSupported, getNotificationPermission, forceUpdateServiceWorker } from '../services/push';
+import * as jdenticon from 'jdenticon';
 
 class ProfileSettings extends Component {
     constructor(props) {
@@ -401,7 +402,7 @@ class ProfileSettings extends Component {
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
                         <Box sx={{ position: 'relative', mb: 2 }}>
                             <Avatar
-                                src={avatarPreview}
+                                src={avatarPreview || `data:image/svg+xml;utf8,${encodeURIComponent(jdenticon.toSvg(customName || user?.name || user?.id || 'anonymous', 120))}`}
                                 sx={{
                                     width: 120,
                                     height: 120,
@@ -412,7 +413,8 @@ class ProfileSettings extends Component {
                                     '&:hover': {
                                         opacity: 0.8,
                                         transform: 'scale(1.02)'
-                                    }
+                                    },
+                                    backgroundColor: 'white' // Identicons look better on white
                                 }}
                                 onClick={this.handleAvatarClick}
                             />
@@ -452,6 +454,7 @@ class ProfileSettings extends Component {
                         onChange={this.handleNameChange}
                         placeholder={googleName}
                         helperText={customName ? '' : `Leer lassen, um Google-Namen zu verwenden: ${googleName}`}
+                        InputLabelProps={{ shrink: true }}
                         sx={{ mb: 3 }}
                     />
 
